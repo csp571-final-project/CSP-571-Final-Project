@@ -1,0 +1,194 @@
+---
+title: "3.5 Modeling : Logistic Regression"
+author: "Himanshu"
+date: "April 10, 2019"
+output: html_document
+---
+```{r}
+library(dplyr)
+library(caret)
+library(lubridate)
+library(stringr)
+library(tidyr)
+library(corrplot)
+library(ggcorrplot)
+library(leaps)
+library(MASS)
+library(ggplot2)
+library(standardize)
+```
+
+```{r}
+df <- read.csv("TransfromedData.csv", header = TRUE)
+
+```
+```{r}
+df = subset(df, select = -c(X.1) )
+
+vars_to_remove <- c("addr_state", "issue_d", "earliest_cr_line", "GeoName")
+
+df1 <- df[, ! names(df) %in% vars_to_remove, drop = F]
+
+```
+
+
+
+```{r}
+str(df1)
+
+```
+```{r}
+#levels(df$loan_status) <- c(1,0)
+#df$loan_status <- as.numeric(df$loan_status)
+table(df$loan_status)
+# 1<- default
+```
+
+
+
+
+```{r}
+
+targetVar <- 'loan_status'
+# We'll do stratified sampling to split our data into training and test sets
+inTrain <- createDataPartition(y = df1[,targetVar], list = FALSE, p = .8)
+train <- df1[inTrain,]
+test <- df1[-inTrain,]
+stopifnot(nrow(train) + nrow(test) == nrow(data))
+names(df1)
+```
+
+```{r}
+xVars <- c("YearBefore", "loan_amnt", "term_.36.months", "term_.60.months", "int_rate", "installment", "grade_A",
+           "grade_B", "grade_C", "grade_D", "grade_E", "grade_F", "grade_G", "home_ownership_MORTGAGE", 
+           "home_ownership_OWN", "home_ownership_RENT", "annual_inc", "verification_status_Not.Verified", 
+           "verification_status_Source.Verified", "verification_status_Verified", "purpose_credit_card",
+           "purpose_debt_consolidation", "purpose_home_improvement", "purpose_major_purchase", "purpose_Others",
+           "purpose_small_business","dti", "open_acc", "pub_rec", "total_acc", "initial_list_status_f", 
+           "initial_list_status_w",
+           "Compensation.of.employees", "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
+           "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", "Subsidies", 
+           "Taxes.on.production.and.imports", "regions_Midwest","regions_Northeast" , "regions_South", "regions_West" )
+```
+
+```{r}
+createModelFormula <- function(targetVar, xVars, includeIntercept = TRUE){
+  if(includeIntercept){
+    modelForm <- as.formula(paste(targetVar, "~", paste(xVars, collapse = '+ ')))
+  } else {
+    modelForm <- as.formula(paste(targetVar, "~", paste(xVars, collapse = '+ '), -1))
+  }
+  return(modelForm)
+}
+
+```
+
+```{r}
+modelForm <- createModelFormula(targetVar, xVars)
+
+model <- glm(modelForm,family=binomial(link='logit'),data=train)
+
+summary(model)
+
+```
+```{r}
+anova(model, test="Chisq")
+```
+
+
+```{r}
+Model1 <- stepAIC(model, direction = "forward")
+```
+```{r}
+Model1 <- stepAIC(model, direction = "backward")
+
+```
+```{r}
+Model1 <- stepAIC(model, direction = "both")
+```
+
+```{r}
+library(h2o)
+h2o.init()
+train1 <- as.h2o(train)
+test2 <- as.h2o(test)
+train[, targetVar] <- as.factor(train[,targetVar])
+aml <- h2o.automl(x = xVars, y = targetVar,
+                  training_frame = train,
+                  max_runtime_secs = 30)
+```
+
+
+
+```{r}
+prob_pred <- predict(model
+                          ,newdata = test[,xVars]
+                          # Specifying response means we want the probabilities
+                          ,type='response')
+summary(prob_pred)
+hist(prob_pred)
+
+```
+```{r}
+library(ROCR)
+pred_cut_off <- ifelse(prob_pred > 0.5, 1,0) #Setting cut-off to be at 0.5
+table(test$loan_status,pred_cut_off )
+pred <- prediction(pred_cut_off,test$loan_status)
+perf <- performance(pred, "tpr", "fpr")
+```
+
+
+```{r}
+
+test[,'fitted.results'] <- fitted.results
+
+
+# We output the probabilities, but we want to turn the probabilities into
+# a classification of survived or not. .5 is a reasonable starting cutoff.
+
+default.pred <- ifelse(fitted.results > 0.5,1,0)
+
+mean(survived.pred)
+mean(train[,targetVar])
+
+```
+```{r}
+
+# Let's use a confusion matrix to evaluate how good our results are
+confusion <- confusionMatrix(data = as.factor(survived.pred)
+                             , reference = as.factor(test[,targetVar])
+                             , dnn = c("Predicted Surival", 'Actual Survival')
+                             )
+confusion
+```
+
+```{r}
+#Printing AUC Value
+perf1 <- performance(pred, "auc")
+print(perf1@y.values[[1]])
+
+```
+```{r}
+#Plotting the ROC-curve
+roc.curve(test$loan_status, pred_cut_off,col="red", main="The ROC-curve for Model with cut-off=0.5")
+text(0.6,0.2,paste("AUC=0.52"))
+confusionMatrix(test$loan_status,pred_cut_off )
+
+
+```
+```{r}
+#Cut-off value = 0.8
+pred_cut_off <- ifelse(prob_pred > 0.8, 1,0) #Setting cut-off to be at 0.8
+table(test.data$loan_status,pred_cut_off )
+pred <- prediction(pred_cut_off,test.data$loan_status)
+perf <- performance(pred, "tpr", "fpr")
+
+#Printing AUC Value
+perf1 <- performance(pred, "auc")
+print(perf1@y.values[[1]])
+#Plotting the ROC-curve
+roc.curve(test.data$loan_status, pred_cut_off,col="red", main="The ROC-curve for Model with cut-off=0.8")
+text(0.6,0.2,paste("AUC=0.65"))
+confusionMatrix(test.data$loan_status,pred_cut_off )
+```
+
