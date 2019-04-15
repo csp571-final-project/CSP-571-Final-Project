@@ -1,0 +1,337 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+library(dplyr)
+library(reshape)
+library(Amelia)
+# 2.1 Secondary Data
+#2.2.1		Access and combine data tables
+rm(list = ls())
+data <- read.csv("C:/Users/young/Desktop/Spring 2019/Data Preparation and Analysis/lending-club-loan-data/loan.csv", stringsAsFactors = F)
+secondary <- read.csv("C:/Users/young/Downloads/gsp_naics_all/gsp_naics_all.csv", stringsAsFactors = F)
+asd <- secondary %>% 
+  filter(IndustryId == 1 & !GeoName %in% c("United States", "Far West", "Great Lakes", "Mideast", "New England", "Plains", "Rocky Mountain", "Southeast", "Southwest")) %>%
+  select(GeoName, ComponentName, X2006, X2007, X2008, X2009, X2010, X2011, X2012, X2013, X2014)
+
+asd
+
+asd <- melt(asd, measure.vars = c("X2006", "X2007", "X2008", "X2009", "X2010", "X2011", "X2012", "X2013", "X2014"))
+levels(as.factor(asd$ComponentName))
+asd$variable <- format(as.Date(paste("1/01/",substring(asd$variable,first = 2), sep = ""), format = "%m/%d/%Y"), "%Y")
+levels(as.factor(asd$variable))
+asd
+
+asd <- cast(asd, GeoName + variable  ~ ComponentName) 
+
+stateDictionary <- read.csv("C:/Users/young/Desktop/Spring 2019/Data Preparation and Analysis/lending-club-loan-data/StateDictionary.csv", stringsAsFactors = F, header = T)
+stateDictionary
+
+finalSecondary <- merge(x = asd, y = stateDictionary, by.x = "GeoName", by.y = "US.State")
+
+missmap(finalSecondary)
+```
+
+```{r}
+# Treat Mismatched Data Types
+library(zoo)
+library(lubridate)
+
+TurnIntoDate <- function(date) {
+  if (grepl(pattern = "\\w{3}-\\d{4}", x = date)) {
+    return(as.Date(as.yearmon(paste(strsplit(date, split = "-")[[1]][2], "-", match(strsplit(date, split = "-")[[1]][1], month.abb), sep = ""))))
+  } else {
+    return(NA)
+  }
+}
+
+
+futureData <- c("collection_recovery_fee",
+                "collections_12_mths_ex_med",
+                "delinq_2yrs",
+                "inq_last_6mths",
+                "last_credit_pull_d",
+                "last_pymnt_amnt",
+                "last_pymnt_d",
+                "mths_since_last_delinq",
+                "mths_since_last_major_derog",
+                "mths_since_last_record",
+                "next_pymnt_d",
+                "out_prncp",
+                "out_prncp_inv",
+                "recoveries",
+                "revol_bal",
+                "revol_util",
+                "total_pymnt",
+                "total_pymnt_inv",
+                "total_rec_int",
+                "total_rec_late_fee",
+                "total_rec_prncp",
+                "open_acc_6m",
+                "open_il_6m",
+                "open_il_12m",
+                "open_il_24m",
+                "mths_since_rcnt_il",
+                "total_bal_il",
+                "il_util",
+                "open_rv_12m",
+                "open_rv_24m",
+                "max_bal_bc",
+                "all_util",
+                "total_rev_hi_lim",
+                "inq_fi",
+                "total_cu_tl",
+                "inq_last_12m",
+                "acc_now_delinq",
+                "tot_coll_amt",
+                "tot_cur_bal"
+)
+
+
+idData <- c("id", "member_id")
+
+categoricalData <- c("addr_state",
+                    "application_type",
+                    "grade",
+                    "home_ownership",
+                    "initial_list_status",
+                    "loan_status",
+                    "policy_code",
+                    "pymnt_plan",
+                    "sub_grade",
+                    "term",
+                    "zip_code",
+                    "purpose",
+                    "title",
+                    "emp_title"
+)
+
+numericalData <- c("annual_inc",
+                   "annual_inc_joint",
+                   "dti",
+                   "dti_joint",
+                   "emp_length",
+                   "funded_amnt",
+                   "funded_amnt_inv",
+                   "installment",
+                   "int_rate",
+                   "loan_amnt",
+                   "open_acc",
+                   "pub_rec",
+                   "total_acc"
+                   )
+
+characterData <- c("desc", "url")
+
+dateData <- c("earliest_cr_line", "issue_d")
+
+
+filteredData <- data %>% select(-one_of(c(futureData))) # Remove future data
+                                                        # last_fico_range_high and last_fico_range_low do not exist in csv file
+                                                        # Removed
+
+setdiff(categoricalData, names(filteredData))  # is_inc_v and verified_status_joint do not exist in the csv file
+                                               # Removed
+
+filteredData[categoricalData] <- lapply(filteredData[categoricalData], factor)  # turn all the categorical data into factors
+
+setdiff(numericalData, names(filteredData)) # fico_range_high and fico_range_low do not exist in the csv file
+                                            # Removed
+
+filteredData[numericalData] <- lapply(filteredData[numericalData], as.numeric) # turn all numerical data into numerical
+
+summary(filteredData[characterData])  # Make sure items belonging to this one are really long texts
+
+filteredData[characterData] <- lapply(filteredData[characterData], as.character)  # turn all character data into character
+
+filteredData$earliest_cr_line <- as.Date(sapply(filteredData$earliest_cr_line, TurnIntoDate))  # turn all date data into date
+
+filteredData$issue_d <- as.Date(sapply(filteredData$issue_d, TurnIntoDate))
+
+head(filteredData)
+
+filteredData <- filteredData %>% mutate(YearBefore = as.character(as.integer(format(as.Date(filteredData$issue_d), "%Y")) - 1)) # substract by one
+
+# Primary and Secondary
+filteredData <- merge(x = filteredData, y = finalSecondary, by.x = c("addr_state", "YearBefore"), by.y = c("Abbreviation", "variable")) 
+
+newlyAdded <- c("Compensation of employees", "Gross domestic product (GDP) by state", "Gross operating surplus", "Per capita real GDP by state", "Quantity indexes for real GDP by state", "Real GDP by state", "Subsidies", "Taxes on production and imports", "Taxes on production and imports less subsidies")
+
+numericalData <- c(numericalData, newlyAdded)
+numericalData
+filteredData[,newlyAdded] <- lapply(filteredData[,newlyAdded], as.numeric)
+
+
+```
+
+```{r}
+# Look for Missing Values and Treat Missing Values
+summary(filteredData)
+
+ImputeMean <- function(column) {
+  # If it is an NA
+  # Impute using the variable's mean
+  ifelse(is.na(column), mean(column, na.rm = TRUE), column)
+}
+
+# emp_title
+# emp_title has a huge number of blanks
+filteredData$emp_title <- ifelse(as.character(filteredData$emp_title) == "", NA, as.character(filteredData$emp_title))
+sum(is.na(filteredData$emp_title))/length(filteredData$emp_title)  # 51457 out of 887379 are NA; almost 6%
+filteredData$emp_title <- as.factor(filteredData$emp_title)
+head(filteredData$emp_title)
+
+# emp_length
+head(filteredData$emp_length)
+sum(is.na(filteredData$emp_length))  # All Na's. Just drop the column
+filteredData$emp_length <- NULL
+numericalData <- numericalData[numericalData != "emp_length"]
+
+# annual_inc 
+sum(is.na(filteredData$annual_inc))
+filteredData$annual_inc <- ImputeMean(filteredData$annual_inc)
+
+# annual_inc_joint
+sum(is.na(filteredData$annual_inc_joint))  # Majority of the values are NA
+                                           # Makes sense as it is dependent on the application_type (JOINT)
+                                           # There are only 511 JOINT applications
+# TODO: Decide on what to do with this
+
+# annual_inc_joint
+sum(is.na(filteredData$dti_joint))  # Majority of the values are NA
+                                    # Makes sense as it is dependent on the application_type (JOINT)
+                                    # There are only 511 JOINT applications
+                                    # Only difference is that there are two more observations 8868870 vs 886868 
+# TODO: Decide on what to do with this
+
+# open_acc, pub_rec, total_acc
+sum(is.na(filteredData$open_acc))  
+sum(is.na(filteredData$pub_rec))
+sum(is.na(filteredData$total_acc))
+# All of them have 29 Na's
+setdiff(which(is.na(filteredData$open_acc)), which(is.na(filteredData$pub_rec)))  
+setdiff(which(is.na(filteredData$open_acc)), which(is.na(filteredData$total_acc)))  
+setdiff(which(is.na(filteredData$total_acc)), which(is.na(filteredData$pub_rec)))  
+# They are the same observations
+filteredData$open_acc <- ImputeMean(filteredData$open_acc)
+filteredData$pub_rec <- ImputeMean(filteredData$pub_rec)
+filteredData$total_acc <- ImputeMean(filteredData$total_acc)
+
+# verification_status and verification_status_joint exists but not in the LC dictionary
+head(filteredData$verification_status)
+head(filteredData$verification_status_joint)
+filteredData$verification_status <- as.factor(filteredData$verification_status)
+filteredData$verification_status_joint <- as.factor(filteredData$verification_status_joint)
+
+summary(filteredData)
+
+# Verification_status_joint has a lot of NA's (since it only exists for joint applications)
+filteredData$verification_status_joint <- ifelse(as.character(filteredData$verification_status_joint) == "", NA, as.character(filteredData$verification_status_joint))
+filteredData$verification_status_joint <- as.factor(filteredData$verification_status_joint)
+```
+
+```{r}
+# Look for Duplicate Values and Treat Duplicate Values
+filteredData[duplicated(filteredData[,idData]),]  # There are no duplicates
+```
+
+```{r}
+# Barplots of Categorical Variables  
+# Boxplots and Density Curves of Continuous Variables
+library(ggplot2)
+
+categoricalData2 <- categoricalData[!categoricalData %in% c("emp_title", "title", "zip_code")]
+# emp_title, title, zip_code have too many levels to graph
+
+for(variable in categoricalData2) {
+  barPlot <- ggplot(filteredData, aes_string(x = variable)) + geom_bar(aes_string(fill = variable), position = "dodge")
+  print(barPlot)
+}
+
+# boxplots
+for(variable in numericalData) {
+  boxplot(filteredData[variable], main = variable)
+}
+
+# transform annual_inc to log10
+filteredData$annual_inc <- ifelse(filteredData$annual_inc >= 1, log10(filteredData$annual_inc), 0)
+filteredData$annual_inc_joint <- ifelse(filteredData$annual_inc_joint >= 1, log10(filteredData$annual_inc_joint), 0)
+```
+
+```{r}
+# trim whitespace, lowercase
+filteredData$emp_title <- as.factor(tolower(trimws(as.character(filteredData$emp_title))))
+filteredData$title <- as.factor(tolower(trimws(as.character(filteredData$title))))
+filteredData$purpose <- as.factor(tolower(trimws(as.character(filteredData$purpose))))
+
+filteredData$emp_title <- ifelse(!as.character(filteredData$emp_title) %in% c("teacher","manager","owner","registered nurse", "supervisor"), "Others", as.character(filteredData$emp_title))
+filteredData$emp_title <- as.factor(filteredData$emp_title)
+
+# purpose is a better representatio of title
+# drop title and fix purpose
+filteredData$title <- NULL
+filteredData$purpose <- ifelse(!as.character(filteredData$purpose) %in% c("debt_consolidation","credit_card","home_improvement","major_purchase","small_business"), "Others", as.character(filteredData$purpose))
+filteredData$purpose <- as.factor(filteredData$purpose)
+
+# drop zip_code because they are not that useful. They cannot be turned into longitude/latitude because only the first 3 numbers are shown 
+# Will be no different from knowing the state
+length(levels(filteredData$zip_code))
+filteredData$zip_code <- NULL 
+
+# drop policy_code because all of the observations have a policy_code of 1
+filteredData$policy_code <- NULL
+
+summary(filteredData)
+```
+
+```{r}
+# Analyze and Handle Outliers
+# there is a huge outlier in dti
+filteredData[which.max(filteredData$dti),]  # application_type is JOINT; maybe 9999 is a code that it is joint
+
+# Check the dti and dti joint for joint applications
+filteredData %>%
+  filter(!is.na(dti_joint)) %>%
+  select(dti, dti_joint)
+
+# Everything seems normal except the 9999. Remove the observation with it.
+filteredData <- filteredData[filteredData$dti < 2000, ]
+```
+
+```{r}
+# Understand Target Responses
+ggplot(filteredData, aes(x = loan_status)) + geom_bar(aes(fill = loan_status), position = "dodge") 
+
+# Charged Off, Default, and Does not meet the credit policy. Status:Charged Off
+# Will be considered as Charged-off/defaulted loan
+
+class1 <- "Defaulted"
+class0 <- "Not Defaulted"
+
+finalData <- filteredData
+finalData$loan_status <- ifelse(finalData$loan_status == "Charged Off", class1, 
+                                ifelse(finalData$loan_status == "Default", class1,
+                                       ifelse(finalData$loan_status == "Does not meet the credit policy. Status:Charged Off", class1, class0)))
+
+ggplot(finalData, aes(x = loan_status)) + geom_bar(aes(fill = loan_status), position = "dodge") 
+1- sum(finalData$loan_status == "Defaulted")/length(finalData$loan_status)  # 0.053 Default rate. Model must have an accuracy higher than 0.947
+```
+
+```{r}
+# Treat Multicollinearity
+a <- cor(as.matrix(finalData[,numericalData]), use = "pairwise.complete.obs")
+a[lower.tri(a,diag=TRUE)]=NA    #Prepare to drop duplicates and meaningless information
+a <- as.data.frame(as.table(a)) #Turn into a 3-column table
+a <- na.omit(a)                 #Get rid of the junk we flagged above
+a <- a[order(-abs(a$Freq)),]    #Sort by highest correlation (whether +ve or -ve)
+head(a, n = 10)  #top 10 variables that are collinear
+                 # loan_amnt, funded_amnt, funded_amnt_inv, installment are almost the same thing
+                 # makes sense since they are "derivatives of each other"
+                 # I propose to remove three of them
+```
+
+```{r}
+write.csv(finalData, file = "FinalData.csv" )
+```
+

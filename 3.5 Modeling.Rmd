@@ -19,7 +19,7 @@ library(standardize)
 ```
 
 ```{r}
-df <- read.csv("TransfromedData.csv", header = TRUE)
+df <- read.csv("TransfromedData_1.csv", header = TRUE)
 
 ```
 ```{r}
@@ -59,16 +59,12 @@ names(df1)
 ```
 
 ```{r}
-xVars <- c("YearBefore", "loan_amnt", "term_.36.months", "term_.60.months", "int_rate", "installment", "grade_A",
-           "grade_B", "grade_C", "grade_D", "grade_E", "grade_F", "grade_G", "home_ownership_MORTGAGE", 
-           "home_ownership_OWN", "home_ownership_RENT", "annual_inc", "verification_status_Not.Verified", 
-           "verification_status_Source.Verified", "verification_status_Verified", "purpose_credit_card",
-           "purpose_debt_consolidation", "purpose_home_improvement", "purpose_major_purchase", "purpose_Others",
-           "purpose_small_business","dti", "open_acc", "pub_rec", "total_acc", "initial_list_status_f", 
-           "initial_list_status_w",
+xVars <- c("YearBefore", "loan_amnt", "term", "int_rate", "installment", "grade",
+           "home_ownership", "annual_inc", "verification_status", "purpose",
+           "dti", "open_acc", "pub_rec", "total_acc", "initial_list_status", 
            "Compensation.of.employees", "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
            "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", "Subsidies", 
-           "Taxes.on.production.and.imports", "regions_Midwest","regions_Northeast" , "regions_South", "regions_West" )
+           "Taxes.on.production.and.imports", "regions" )
 ```
 
 ```{r}
@@ -81,9 +77,11 @@ createModelFormula <- function(targetVar, xVars, includeIntercept = TRUE){
   return(modelForm)
 }
 
+
 ```
 
 ```{r}
+
 modelForm <- createModelFormula(targetVar, xVars)
 
 model <- glm(modelForm,family=binomial(link='logit'),data=train)
@@ -93,6 +91,23 @@ summary(model)
 ```
 ```{r}
 anova(model, test="Chisq")
+```
+```{r}
+fitted.results <- predict(model
+                          ,newdata = test[,xVars]
+                          # Specifying response means we want the probabilities
+                          ,type='response')
+hist(fitted.results)
+
+test[,'fitted.results'] <- fitted.results
+```
+```{r}
+# We output the probabilities, but we want to turn the probabilities into
+# a classification of survived or not. .5 is a reasonable starting cutoff.
+default.pred <- ifelse(fitted.results > 0.5,1,0)
+
+mean(default.pred)
+mean(train[,targetVar])
 ```
 
 
@@ -104,18 +119,169 @@ Model1 <- stepAIC(model, direction = "backward")
 
 ```
 ```{r}
-Model1 <- stepAIC(model, direction = "both")
+Model1 <- stepAIC(model, direction = "both", )
 ```
 
 ```{r}
+Model1$anova
+```
+```{r}
+
+xVars2 <- c("YearBefore", "loan_amnt", "term", "int_rate", "installment", "grade",
+           "home_ownership", "annual_inc", "verification_status", "purpose",
+           "dti", "pub_rec", "total_acc", "initial_list_status", 
+           "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
+           "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", 
+           "Taxes.on.production.and.imports", "regions" )
+
+modelForm <- createModelFormula(targetVar, xVars2)
+
+model_final <- glm(modelForm,family=binomial(link='logit'),data=train)
+
+summary(model_final)
+```
+```{r}
+# Only three variable model 
+
+xVars3 <- c("Subsidies", "Compensation.of.employees", "open_acc")
+
+modelForm <- createModelFormula(targetVar, xVars3)
+
+model_final2 <- glm(modelForm,family=binomial(link='logit'),data=train)
+
+summary(model_final2)
+```
+```{r}
+# we choose model final for further processing since lower AIC value
+
+anova(model_final, test="Chisq")
+
+```
+
+```{r}
+fitted.results <- predict(model_final
+                          ,newdata = test[,xVars]
+                          # Specifying response means we want the probabilities
+                          ,type='response')
+hist(fitted.results)
+
+test[,'fitted.results'] <- fitted.results
+```
+
+```{r}
+# coNFUSION MATRIX
+#set the threshold
+thresh <- 0.5
+
+# predictions using that threshold
+# note explicit ordering of levels
+out <- factor(ifelse(fitted.results > thresh, "Not Default", "Default"), levels = c("Not Default", "Default"))
+
+#basic confusion matrix
+addmargins(table(out, test[,targetVar])) 
+
+#confusionMatrix(table(out, test[,targetVar]))
+
+prop.table(table(test[,targetVar])) # no information rate
+
+167484/176913
+```
+
+```{r}
+# Let's look at the ROC curve
+library(ROCR)
+pr <- prediction(fitted.results, test$loan_status)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+```{r}
+# Let's look at the precision recall curves
+# install.packages('DMwR')
+library('DMwR')
+PRcurve(preds = fitted.results, trues = test$loan_status)
+
+# Let's take a look at the deviance
+llcomponents <- function(y, predicted.y){
+  return(y*log(predicted.y) + (1-y)*log(1-predicted.y))
+}
+y <- train[,targetVar]
+predicted.y <- predict(model
+                       ,newdata = train[,xVars]
+                       # Specifying response means we want the probabilities
+                       ,type='response')
+
+deviance <- sign(as.numeric(y) - predicted.y)*sqrt(-2*llcomponents(as.numeric(y), predicted.y))
+
+summary(deviance)
+```
+
+```{r}
+# Extract the AIC
+aic<- 2 * length(model$coefficients) - 2*logLik(model)
+aic
+AIC(model)
+# Note that logLikelihoods in R are only defined up to an additive constant
+# Different implementations of calculating the loglikelihood and therefore AIC
+# may give different results. Ensure you are using the SAME implementation to
+# compare model results relatively
+alligator = data.frame(
+  lnLength = c(3.87, 3.61, 4.33, 3.43, 3.81, 3.83, 3.46, 3.76,
+               3.50, 3.58, 4.19, 3.78, 3.71, 3.73, 3.78),
+  lnWeight = c(4.87, 3.93, 6.46, 3.33, 4.38, 4.70, 3.50, 4.50,
+               3.58, 3.64, 5.90, 4.43, 4.38, 4.42, 4.25)
+)
+alli.mod1 = lm(lnWeight ~ lnLength, data = alligator)
+AIC(alli.mod1)
+extractAIC(alli.mod1)
+# NOT THE SAME RESULT
+
+
+
+
+# Pseudo-R**2
+mod <- glm(y~x, family="binomial")
+nullmod <- glm(y~1, family="binomial")
+1-logLik(mod)/logLik(nullmod)
+
+```
+
+
+
+```{r}
+
+
 library(h2o)
+library(RCurl)
+library(jsonlite)
 h2o.init()
 train1 <- as.h2o(train)
 test2 <- as.h2o(test)
 train[, targetVar] <- as.factor(train[,targetVar])
-aml <- h2o.automl(x = xVars, y = targetVar,
-                  training_frame = train,
+aml <- h2o.automl(x = xVars2, y = targetVar,
+                  training_frame = train1,
                   max_runtime_secs = 30)
+lb <- aml@leaderboard
+lb
+```
+```{r}
+aml <- h2o.automl(x = xVars, y = targetVar,
+                  training_frame = train1,
+                  max_models = 20,
+                  seed = 1)
+lb <- aml@leaderboard
+print(lb, n = nrow(lb))
+```
+```{r}
+aml@leader
+```
+```{r}
+pred <- h2o.predict(aml, test2)
+
 ```
 
 

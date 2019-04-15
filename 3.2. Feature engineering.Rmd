@@ -92,8 +92,14 @@ df2 <- dummy.data.frame(df, names = c("regions","term", "grade","home_ownership"
 ```
 
 ```{r}
+# hard encoding for categorical variables
 head(df2)
 write.csv(df2, file = "TransfromedData.csv" )
+```
+
+```{r}
+head(df)
+write.csv(df, file = "TransfromedData_1.csv" )
 ```
 
 
