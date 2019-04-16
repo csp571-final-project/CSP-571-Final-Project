@@ -1,0 +1,63 @@
+---
+title: "Untitled"
+author: "Himanshu"
+date: "April 15, 2019"
+output: html_document
+---
+
+```{r}
+install.packages("randomForest")
+library(randomForest)
+library(dplyr)
+```
+
+
+```{r}
+library(dplyr)
+library(caret)
+library(lubridate)
+library(stringr)
+library(tidyr)
+library(corrplot)
+library(ggcorrplot)
+library(leaps)
+library(MASS)
+library(ggplot2)
+library(standardize)
+```
+
+```{r}
+df <- read.csv("TransfromedData_1.csv", header = TRUE)
+
+```
+```{r}
+df = subset(df, select = -c(X.1) )
+
+vars_to_remove <- c("X","X.1", "addr_state", "issue_d", "earliest_cr_line", "GeoName", "application_type")
+
+df1 <- df[, ! names(df) %in% vars_to_remove, drop = F]
+colnames(df1)
+```
+
+
+
+```{r}
+# Split into Train and Validation sets
+# Training Set : Validation Set = 70 : 30 (random)
+set.seed(100)
+train <- sample(nrow(df1), 0.8*nrow(df1), replace = FALSE)
+TrainSet <- df1[train,]
+ValidSet <- df1[-train,]
+#summary(TrainSet)
+#summary(ValidSet)
+```
+```{r}
+model1 <- randomForest(loan_status ~ YearBefore+loan_amnt+installment+term+int_rate+grade+
+                         home_ownership+annual_inc+verification_status+loan_status+purpose+dti+
+                         open_acc+pub_rec+total_acc+initial_list_status+Compensation.of.employees+
+                         Gross.operating.surplus+Per.capita.real.GDP.by.state+Quantity.indexes.for.real.GDP.by.state+
+                         Real.GDP.by.state+Subsidies+Taxes.on.production.and.imports+regions,
+                       data = TrainSet, importance = TRUE)
+model1
+```
+
