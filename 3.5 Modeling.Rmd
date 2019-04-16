@@ -16,50 +16,42 @@ library(leaps)
 library(MASS)
 library(ggplot2)
 library(standardize)
+library(Amelia)
 ```
 
 ```{r}
 df <- read.csv("TransfromedData_1.csv", header = TRUE)
-
+summary(df)
+table(df$YearBefore)
 ```
-```{r}
-df = subset(df, select = -c(X.1) )
 
-vars_to_remove <- c("addr_state", "issue_d", "earliest_cr_line", "GeoName")
+```{r}
+vars_to_remove <- c("X.1", "X","YearBefore","addr_state", "issue_d", "earliest_cr_line", "GeoName")
 
 df1 <- df[, ! names(df) %in% vars_to_remove, drop = F]
-
-```
-
-
-
-```{r}
 str(df1)
-
-```
-```{r}
-#levels(df$loan_status) <- c(1,0)
-#df$loan_status <- as.numeric(df$loan_status)
-table(df$loan_status)
-# 1<- default
 ```
 
+```{r}
 
+df1$dti <- as.numeric(df1$dti)
+table(df1$loan_status)
 
+```
 
 ```{r}
+# We'll do stratified sampling to split our data into training and test sets
 
 targetVar <- 'loan_status'
-# We'll do stratified sampling to split our data into training and test sets
 inTrain <- createDataPartition(y = df1[,targetVar], list = FALSE, p = .8)
 train <- df1[inTrain,]
 test <- df1[-inTrain,]
-stopifnot(nrow(train) + nrow(test) == nrow(data))
+stopifnot(nrow(train) + nrow(test) == nrow(df1))
 names(df1)
 ```
 
 ```{r}
-xVars <- c("YearBefore", "loan_amnt", "term", "int_rate", "installment", "grade",
+xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
            "home_ownership", "annual_inc", "verification_status", "purpose",
            "dti", "open_acc", "pub_rec", "total_acc", "initial_list_status", 
            "Compensation.of.employees", "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
@@ -68,6 +60,8 @@ xVars <- c("YearBefore", "loan_amnt", "term", "int_rate", "installment", "grade"
 ```
 
 ```{r}
+# Formula Function
+
 createModelFormula <- function(targetVar, xVars, includeIntercept = TRUE){
   if(includeIntercept){
     modelForm <- as.formula(paste(targetVar, "~", paste(xVars, collapse = '+ ')))
@@ -81,8 +75,8 @@ createModelFormula <- function(targetVar, xVars, includeIntercept = TRUE){
 ```
 
 ```{r}
-
-modelForm <- createModelFormula(targetVar, xVars)
+# Building model with all variables
+modelForm <- createModelFormula(targetVar, xVars, includeIntercept = F)
 
 model <- glm(modelForm,family=binomial(link='logit'),data=train)
 
@@ -90,9 +84,20 @@ summary(model)
 
 ```
 ```{r}
+predictors(model)
+```
+
+```{r}
+varImp(model)
+
+```
+
+```{r}
 anova(model, test="Chisq")
 ```
 ```{r}
+# testing model on test data set
+
 fitted.results <- predict(model
                           ,newdata = test[,xVars]
                           # Specifying response means we want the probabilities
@@ -101,45 +106,46 @@ hist(fitted.results)
 
 test[,'fitted.results'] <- fitted.results
 ```
+
 ```{r}
 # We output the probabilities, but we want to turn the probabilities into
 # a classification of survived or not. .5 is a reasonable starting cutoff.
-default.pred <- ifelse(fitted.results > 0.5,1,0)
 
-mean(default.pred)
-mean(train[,targetVar])
+default.pred <- ifelse(fitted.results > 0.5,"Not Defaulted","Defaulted")
+default.pred <- as.factor(default.pred)
+
+class(default.pred)
+class(test[,targetVar])
+
+table(default.pred)
+table(test[,targetVar])
+
+
+```
+```{r}
+# Let's use a confusion matrix to evaluate how good our results are
+confusion <- confusionMatrix(default.pred, test[,targetVar])                             
+confusion
 ```
 
 
 ```{r}
 Model1 <- stepAIC(model, direction = "forward")
 ```
+
 ```{r}
-Model1 <- stepAIC(model, direction = "backward")
+Model2 <- stepAIC(model, direction = "backward")
 
 ```
 ```{r}
-Model1 <- stepAIC(model, direction = "both", )
+Model_Step <- stepAIC(model, direction = "both", )
 ```
 
 ```{r}
-Model1$anova
+anova(model, Model_Step)
 ```
-```{r}
 
-xVars2 <- c("YearBefore", "loan_amnt", "term", "int_rate", "installment", "grade",
-           "home_ownership", "annual_inc", "verification_status", "purpose",
-           "dti", "pub_rec", "total_acc", "initial_list_status", 
-           "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
-           "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", 
-           "Taxes.on.production.and.imports", "regions" )
 
-modelForm <- createModelFormula(targetVar, xVars2)
-
-model_final <- glm(modelForm,family=binomial(link='logit'),data=train)
-
-summary(model_final)
-```
 ```{r}
 # Only three variable model 
 
@@ -151,41 +157,97 @@ model_final2 <- glm(modelForm,family=binomial(link='logit'),data=train)
 
 summary(model_final2)
 ```
+
 ```{r}
-# we choose model final for further processing since lower AIC value
+fitted.results <- predict(model_final2
+                          ,newdata = test[,xVars3]
+                          # Specifying response means we want the probabilities
+                          ,type='response')
 
-anova(model_final, test="Chisq")
+test[,'fitted.results'] <- fitted.results
 
+# We output the probabilities, but we want to turn the probabilities into
+# a classification of survived or not. .5 is a reasonable starting cutoff.
+
+default.pred <- ifelse(fitted.results > 0.5,"Not Defaulted","Defaulted")
+default.pred <- as.factor(default.pred)
+
+class(default.pred)
+class(test[,targetVar])
+
+table(default.pred)
+table(test[,targetVar])
+
+# Let's use a confusion matrix to evaluate how good our results are
+confusion <- confusionMatrix(default.pred, test[,targetVar])                             
+confusion
+```
+```{r}
+# removing the above three varibles and building final model
+# We'll do stratified sampling to split our data into training and test sets
+
+targetVar <- 'loan_status'
+inTrain1 <- createDataPartition(y = df1[,targetVar], list = FALSE, p = .8)
+train1 <- df1[inTrain,]
+test1 <- df1[-inTrain,]
+stopifnot(nrow(train1) + nrow(test1) == nrow(df1))
+
+xVars1 <- c("loan_amnt", "term", "int_rate", "installment", "grade",
+           "home_ownership", "annual_inc", "verification_status", "purpose",
+           "dti", "pub_rec", "total_acc", "initial_list_status", 
+           "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
+           "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", 
+           "Taxes.on.production.and.imports", "regions" )
+# Formula Function
+
+createModelFormula <- function(targetVar, xVars1, includeIntercept = TRUE){
+  if(includeIntercept){
+    modelForm <- as.formula(paste(targetVar, "~", paste(xVars1, collapse = '+ ')))
+  } else {
+    modelForm <- as.formula(paste(targetVar, "~", paste(xVars1, collapse = '+ '), -1))
+  }
+  return(modelForm)
+}
+
+# Building model with all variables
+modelForm <- createModelFormula(targetVar, xVars1, includeIntercept = F)
+
+model_final <- glm(modelForm,family=binomial(link='logit'),data=train1)
+
+summary(model_final)
 ```
 
 ```{r}
+# testing model on test data set
+
 fitted.results <- predict(model_final
-                          ,newdata = test[,xVars]
+                          ,newdata = test1[,xVars1]
                           # Specifying response means we want the probabilities
                           ,type='response')
 hist(fitted.results)
 
-test[,'fitted.results'] <- fitted.results
-```
+test1[,'fitted.results'] <- fitted.results
 
+# We output the probabilities, but we want to turn the probabilities into
+# a classification of survived or not. .5 is a reasonable starting cutoff.
+
+default.pred <- ifelse(fitted.results > 0.5,"Not Defaulted","Defaulted")
+default.pred <- as.factor(default.pred)
+
+class(default.pred)
+class(test1[,targetVar])
+
+table(default.pred)
+table(test1[,targetVar])
+
+# Let's use a confusion matrix to evaluate how good our results are
+confusion <- confusionMatrix(default.pred, test1[,targetVar])                             
+confusion
+```
 ```{r}
-# coNFUSION MATRIX
-#set the threshold
-thresh <- 0.5
-
-# predictions using that threshold
-# note explicit ordering of levels
-out <- factor(ifelse(fitted.results > thresh, "Not Default", "Default"), levels = c("Not Default", "Default"))
-
-#basic confusion matrix
-addmargins(table(out, test[,targetVar])) 
-
-#confusionMatrix(table(out, test[,targetVar]))
-
-prop.table(table(test[,targetVar])) # no information rate
-
-167484/176913
+# Our first model with all variables was better
 ```
+
 
 ```{r}
 # Let's look at the ROC curve
@@ -221,31 +283,14 @@ summary(deviance)
 ```
 
 ```{r}
-# Extract the AIC
-aic<- 2 * length(model$coefficients) - 2*logLik(model)
-aic
-AIC(model)
-# Note that logLikelihoods in R are only defined up to an additive constant
-# Different implementations of calculating the loglikelihood and therefore AIC
-# may give different results. Ensure you are using the SAME implementation to
-# compare model results relatively
-alligator = data.frame(
-  lnLength = c(3.87, 3.61, 4.33, 3.43, 3.81, 3.83, 3.46, 3.76,
-               3.50, 3.58, 4.19, 3.78, 3.71, 3.73, 3.78),
-  lnWeight = c(4.87, 3.93, 6.46, 3.33, 4.38, 4.70, 3.50, 4.50,
-               3.58, 3.64, 5.90, 4.43, 4.38, 4.42, 4.25)
-)
-alli.mod1 = lm(lnWeight ~ lnLength, data = alligator)
-AIC(alli.mod1)
-extractAIC(alli.mod1)
-# NOT THE SAME RESULT
-
-
-
-
 # Pseudo-R**2
-mod <- glm(y~x, family="binomial")
-nullmod <- glm(y~1, family="binomial")
+mod <- glm(loan_status~loan_amnt+term+int_rate+installment+grade+
+           home_ownership+annual_inc+verification_status+purpose+
+           dti+open_acc+pub_rec+total_acc+initial_list_status+ 
+           Compensation.of.employees+Gross.operating.surplus+Per.capita.real.GDP.by.state+ 
+           Quantity.indexes.for.real.GDP.by.state+Real.GDP.by.state+Subsidies+ 
+           Taxes.on.production.and.imports+regions , family="binomial", data = train)
+nullmod <- glm(loan_status~1, family="binomial", data = train)
 1-logLik(mod)/logLik(nullmod)
 
 ```
@@ -253,108 +298,50 @@ nullmod <- glm(y~1, family="binomial")
 
 
 ```{r}
-
-
-library(h2o)
-library(RCurl)
-library(jsonlite)
-h2o.init()
-train1 <- as.h2o(train)
-test2 <- as.h2o(test)
-train[, targetVar] <- as.factor(train[,targetVar])
-aml <- h2o.automl(x = xVars2, y = targetVar,
-                  training_frame = train1,
-                  max_runtime_secs = 30)
-lb <- aml@leaderboard
-lb
+library(earth)
+marsModel <- earth(loan_status ~ ., data=df1) # build model
+ev <- evimp (marsModel)
+ev
 ```
 ```{r}
-aml <- h2o.automl(x = xVars, y = targetVar,
-                  training_frame = train1,
-                  max_models = 20,
-                  seed = 1)
-lb <- aml@leaderboard
-print(lb, n = nrow(lb))
-```
-```{r}
-aml@leader
-```
-```{r}
-pred <- h2o.predict(aml, test2)
+model_feature <- glm(loan_status~int_rate+Quantity.indexes.for.real.GDP.by.state+annual_inc+
+                       initial_list_status +Taxes.on.production.and.imports,
+                     family=binomial(link='logit'),data=train)
 
+features <- c("int_rate","Quantity.indexes.for.real.GDP.by.state","annual_inc",
+                       "initial_list_status","Taxes.on.production.and.imports")
 ```
 
-
-
 ```{r}
-prob_pred <- predict(model
-                          ,newdata = test[,xVars]
+# testing model on test data set
+
+fitted.results <- predict(model_feature
+                          ,newdata = test[,features]
                           # Specifying response means we want the probabilities
                           ,type='response')
-summary(prob_pred)
-hist(prob_pred)
-
-```
-```{r}
-library(ROCR)
-pred_cut_off <- ifelse(prob_pred > 0.5, 1,0) #Setting cut-off to be at 0.5
-table(test$loan_status,pred_cut_off )
-pred <- prediction(pred_cut_off,test$loan_status)
-perf <- performance(pred, "tpr", "fpr")
-```
-
-
-```{r}
+hist(fitted.results)
 
 test[,'fitted.results'] <- fitted.results
-
 
 # We output the probabilities, but we want to turn the probabilities into
 # a classification of survived or not. .5 is a reasonable starting cutoff.
 
-default.pred <- ifelse(fitted.results > 0.5,1,0)
+default.pred <- ifelse(fitted.results > 0.5,"Not Defaulted","Defaulted")
+default.pred <- as.factor(default.pred)
 
-mean(survived.pred)
-mean(train[,targetVar])
+class(default.pred)
+class(test[,targetVar])
 
-```
-```{r}
+table(default.pred)
+table(test[,targetVar])
 
 # Let's use a confusion matrix to evaluate how good our results are
-confusion <- confusionMatrix(data = as.factor(survived.pred)
-                             , reference = as.factor(test[,targetVar])
-                             , dnn = c("Predicted Surival", 'Actual Survival')
-                             )
+confusion <- confusionMatrix(default.pred, test[,targetVar])                             
 confusion
 ```
-
 ```{r}
-#Printing AUC Value
-perf1 <- performance(pred, "auc")
-print(perf1@y.values[[1]])
-
+#We found that No Information rate is higher than any of our any model
 ```
-```{r}
-#Plotting the ROC-curve
-roc.curve(test$loan_status, pred_cut_off,col="red", main="The ROC-curve for Model with cut-off=0.5")
-text(0.6,0.2,paste("AUC=0.52"))
-confusionMatrix(test$loan_status,pred_cut_off )
 
 
-```
-```{r}
-#Cut-off value = 0.8
-pred_cut_off <- ifelse(prob_pred > 0.8, 1,0) #Setting cut-off to be at 0.8
-table(test.data$loan_status,pred_cut_off )
-pred <- prediction(pred_cut_off,test.data$loan_status)
-perf <- performance(pred, "tpr", "fpr")
-
-#Printing AUC Value
-perf1 <- performance(pred, "auc")
-print(perf1@y.values[[1]])
-#Plotting the ROC-curve
-roc.curve(test.data$loan_status, pred_cut_off,col="red", main="The ROC-curve for Model with cut-off=0.8")
-text(0.6,0.2,paste("AUC=0.65"))
-confusionMatrix(test.data$loan_status,pred_cut_off )
-```
 
