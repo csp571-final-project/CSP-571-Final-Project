@@ -20,7 +20,7 @@ library(standardize)
 ```
 
 ```{r}
-df <- read.csv("Data.csv", header = TRUE)
+df <- read.csv("Data1.csv", header = TRUE)
 
 ```
 
@@ -80,6 +80,14 @@ numVars <- names(which(sapply(df, is.numeric)))
 catvars <- names(which(sapply(df, is.factor)))
 summary(df[,numVars])
 ```
+```{r}
+# creating month column from issue date to see if month has some specific pattern associated with interest rate or loan_status 
+
+df$month <- month(as.POSIXlt(df$issue_d, format="%d/%m/%Y"))
+df$month <- as.factor(df$month)
+Desc(loan_status ~ month, df, digits = 1, main = "Loan status by month", plotit = TRUE)
+Desc(int_rate ~ month, df, digits = 1, main = "Loan status by month", plotit = TRUE)
+```
 
 
 ```{r}
@@ -99,7 +107,7 @@ write.csv(df2, file = "TransfromedData.csv" )
 
 ```{r}
 head(df)
-write.csv(df, file = "TransfromedData_1.csv" )
+write.csv(df, file = "TransfromedData1.csv" )
 ```
 
 
