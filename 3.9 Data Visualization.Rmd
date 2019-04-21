@@ -1,0 +1,96 @@
+---
+title: "3.9 Data Visualization"
+author: "Vadym Ovcharenko"
+date: "4/16/2019"
+output: 
+  html_document:
+    smart: false
+---
+
+# Data Visuzalization
+
+In this project, I attempt to execute some of the most interesting data visualization techniques.
+
+```{r}
+# dependencies
+require('Rtsne')
+library(dplyr)
+library(splitstackshape)
+library(cluster)
+library(ggplot2)
+```
+
+
+## t-SNE
+
+Humans can only percept data in a low-dimensional spaces, such as 2-D or 3-D. Unfortunately, most of the real-world data has many more dimensions. In order to visualize such complex data, we need to somehow map it to a lower dimension space. One of the techniques that is used to do so is called [Dimensionality Reduction](https://en.wikipedia.org/wiki/Dimensionality_reduction). One of the most known dimensionality reduction techniaues is PCA. However, PCA tries to find linear patterns in data and preserve them while going to lower dimensions, treating everything else as random noise. However, it is not always the case that the patterns in the data follow linear fashion. For these more complex data, we need a more advanced dimensionality reduction technique called [t-SNE](https://www.analyticsvidhya.com/blog/2017/01/t-sne-implementation-r-python/) which is almost 100 years younger than PCA. 
+Under the hood, t-SNE works by clustering the data using similarity measures. Therefore some data preprocessing is required to ensure that the data is ready for this type of data analysis. Numerical features should be normalized. Categorical features should be leveled in order to calculate the distance between them.
+
+```{r}
+df <- read.csv('TransfromedData_1.csv', header = T)
+# drop useless columns 
+df <- df[, -c(1, 2)]
+
+# application_type is very unbalanced, so we will only explore the individual applications
+# also, I didn't want the time dimension to complicate the visualization, so I dropped the date cols.
+# additionaly, I wanted the vizualisations to be more demographic, so I dropped variables that are
+# characteristics of the loan (except purpose)
+df <- select(df[df$application_type == 'INDIVIDUAL',], 
+             -c(
+               application_type, 
+               GeoName, 
+               YearBefore,
+               regions,
+               earliest_cr_line,
+               issue_d,
+               loan_amnt,
+               int_rate,
+               term,
+               initial_list_status
+             ))
+
+# make sure that ordinal variables are ordered
+df$grade <- factor(df$grade, ordered=T)
+
+catVars <- c('addr_state', 'grade', 'home_ownership', 'verification_status', 'loan_status', 'purpose')
+numVars <- setdiff(colnames(df), catVars)
+
+summary(df)
+```
+I played with a sample of data, because visializing almost a million rows is quite challanging computationally. 
+
+```{r}
+
+set.seed(1)
+# Take a stratified sample of data
+dfs <- stratified(df, c("loan_status"), 500)
+
+write.csv(dfs, file = "TransfromedData_1_sample.csv", row.names=FALSE)
+
+summary(dfs)
+colnames(dfs)
+#sapply(catVars, function(x) plot(dfs[, ..x], main=x))
+```
+
+
+```{r}
+# calculate distance for variables of all types
+gower_dist <- dfs %>% select(-loan_status) %>% daisy(
+                    metric = "gower")
+summary(gower_dist)
+```
+
+
+```{r}
+tsne_obj <- Rtsne(gower_dist, is_distance = TRUE, perplexity=50)
+
+tsne_data <- tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("x_coord", "y_coord")) %>%
+  cbind(dfs)
+
+ggplot(aes(x = x_coord, y = y_coord), data = tsne_data) + 
+  geom_point(aes(color = loan_status, shape=purpose), alpha=0.5)
+  #+ geom_text(aes(label=purpose), check_overlap = T)
+```
+
