@@ -13,11 +13,13 @@ In this project, I attempt to execute some of the most interesting data visualiz
 
 ```{r}
 # dependencies
-require('Rtsne')
+library(Rtsne)
 library(dplyr)
 library(splitstackshape)
 library(cluster)
 library(ggplot2)
+library(plotly)
+library(purrr)
 ```
 
 
@@ -43,10 +45,14 @@ df <- select(df[df$application_type == 'INDIVIDUAL',],
                regions,
                earliest_cr_line,
                issue_d,
-               loan_amnt,
-               int_rate,
-               term,
-               initial_list_status
+               initial_list_status, 
+               Taxes.on.production.and.imports, # drop state-related variables
+               Subsidies,
+               Real.GDP.by.state,
+               Quantity.indexes.for.real.GDP.by.state,
+               Per.capita.real.GDP.by.state,
+               Gross.operating.surplus,
+               Compensation.of.employees
              ))
 
 # make sure that ordinal variables are ordered
@@ -63,7 +69,7 @@ I played with a sample of data, because visializing almost a million rows is qui
 
 set.seed(1)
 # Take a stratified sample of data
-dfs <- stratified(df, c("loan_status"), 500)
+dfs <- stratified(df, c("loan_status"), 2000)
 
 write.csv(dfs, file = "TransfromedData_1_sample.csv", row.names=FALSE)
 
@@ -89,8 +95,57 @@ tsne_data <- tsne_obj$Y %>%
   setNames(c("x_coord", "y_coord")) %>%
   cbind(dfs)
 
-ggplot(aes(x = x_coord, y = y_coord), data = tsne_data) + 
+plt <- ggplot(aes(x = x_coord, y = y_coord), data = tsne_data) + 
   geom_point(aes(color = loan_status, shape=purpose), alpha=0.5)
-  #+ geom_text(aes(label=purpose), check_overlap = T)
+plt
+```
+Unfortunately, t-SNE does not show any apparent spearation of defaulters. Although it shows us that there are some very distinct clusters in our dataset. Looking closer into the clusters, shows that they are almost perfectly based on the state variable.
+
+```{r}
+plt + geom_text(aes(label=addr_state), check_overlap = T)
+```
+Obviously, t-SNE algorithm tells us that state is a major distinguishing factor between groups of customers in our dataset. 
+
+```{r}
+# calculate distance for variables of all types
+gower_dist <- dfs %>% select(-c(loan_status, addr_state)) %>% daisy(
+                    metric = "gower")
+
+tsne_obj <- Rtsne(gower_dist, is_distance = TRUE, perplexity=50)
+
+tsne_data <- tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("x_coord", "y_coord")) %>%
+  cbind(dfs)
+
+ggplot(aes(x = x_coord, y = y_coord), data = tsne_data) + 
+  geom_point(aes(color = loan_status, shape=purpose), alpha=0.5)+
+  geom_text(aes(label=addr_state), check_overlap = T)
+```
+Removing the state variable adds more personality to the vizualisation and makes it more interesting to explore.
+
+```{r}
+
+
+plot_ly(tsne_data, x = ~x_coord, y = ~y_coord, 
+        color = ~loan_status, 
+        alpha=0.5)
+```
+```{r}
+
+tsne_obj <- Rtsne(gower_dist, is_distance = TRUE, perplexity=50, dims=3)
+
+tsne_data <- tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("x_coord", "y_coord", "z_coord")) %>%
+  cbind(dfs)
+
+plot_ly(tsne_data, x = ~x_coord, y = ~y_coord, z = ~z_coord, 
+        color = ~loan_status, 
+        shape = ~purpose,
+        mode='markers',
+        hoverinfo = 'text',
+        text = ~paste('Purpose', dfs$purpose) # TODO display all relevant data
+        )
 ```
 
