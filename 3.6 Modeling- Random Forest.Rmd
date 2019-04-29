@@ -1,5 +1,214 @@
 ---
 title: "Random Forest"
-output: html_notebook
+author: "Himanshu"
+date: "April , 2019"
+output: html_document
 ---
+
+```{r}
+library(randomForest)
+library(dplyr)
+library(caret)
+library(lubridate)
+library(stringr)
+library(tidyr)
+library(corrplot)
+library(ggcorrplot)
+library(leaps)
+library(MASS)
+library(ggplot2)
+library(standardize)
+library(rpart)
+library(mlbench)
+library(caret)
+library(tidyverse)
+library(rpart.plot)
+library(RColorBrewer)
+```
+
+```{r}
+df <- read.csv("TransfromedData2.csv", header = TRUE)
+str(df)
+```
+```{r}
+vars_to_remove <- c("X")
+
+df1 <- df[, ! names(df) %in% vars_to_remove, drop = F]
+str(df1)
+```
+
+```{r}
+# We'll do stratified sampling to split our data into training and test sets
+set.seed(1)
+
+targetVar <- 'default'
+inTrain <- createDataPartition(y = df1[,targetVar], list = FALSE, p = .8)
+train <- df1[inTrain,]
+test <- df1[-inTrain,]
+stopifnot(nrow(train) + nrow(test) == nrow(df1))
+str(df1)
+```
+
+```{r}
+# Imbalanced data - under-sampling
+# Under-sampling balances the dataset by reducing the size of the abundant class. This method is used when quantity of # data is sufficient. By keeping all samples in the rare class and randomly selecting an equal number of samples in   # the abundant class, a balanced new dataset can be retrieved for further modelling.
+
+xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
+           "home_ownership", "annual_inc", "verification_status", "purpose",
+           "dti", "open_acc", "pub_rec", "total_acc", "initial_list_status", 
+           "Compensation.of.employees", "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
+           "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", "Subsidies", 
+           "Taxes.on.production.and.imports", "regions" )
+
+
+train_down <- 
+  caret::downSample(x = train[, xVars], 
+                    y = as.factor(train$default), yname = "default")
+
+base::prop.table(table(train_down$default))
+base::table(train_down$default)
+```
+```{r}
+# Model Formula
+
+createModelFormula <- function(targetVar, xVars, includeIntercept = TRUE){
+  if(includeIntercept){
+    modelForm <- as.formula(paste(targetVar, "~", paste(xVars, collapse = '+ ')))
+  } else {
+    modelForm <- as.formula(paste(targetVar, "~", paste(xVars, collapse = '+ '), -1))
+  }
+  return(modelForm)
+}
+
+modelForm <- createModelFormula(targetVar, xVars)
+targetVar<- train_down$default
+
+```
+
+```{r}
+x = train[,xVars]
+
+
+y = as.factor(train[, targetVar])
+cleanNames <- function(x){
+feature.names=names(x)
+  for (f in feature.names) {
+    if (class(x[[f]])=="factor") {
+      levels <- unique(c(x[[f]]))
+      x[[f]] <- factor(x[[f]],
+                       labels=make.names(levels))
+    }
+  }
+return(x)}
+
+xOld <- x
+x <- cleanNames(x)
+y = make.names(y)
+str(x)
+
+y_Random <-as.factor(y)
+fit3 <- randomForest(x = x, y = y_Random
+                    , data=train_down,
+                    importance=TRUE,
+                    ntree=20)
+
+fit3
+
+varImpPlot(fit3)
+
+# test our model
+test <- cleanNames(test)
+fit3.pred <- predict(fit3, test, type = "response")
+str(test)
+str(fit3.pred)
+levels(test$default) <- c("FALSE.","TRUE.")
+test$default <- as.factor(test$default)
+str(test$default)
+ActualNew <-test$default
+
+confusionMatrix(reference = ActualNew, data = fit3.pred)
+```
+```{r}
+# Training on FUll data with 100 trees
+
+fit4 <- randomForest(x = x, y = y_Random
+                    , data=train,
+                    importance=TRUE,
+                    ntree=100)
+
+fit4
+
+varImpPlot(fit4)
+
+# test our model
+test <- cleanNames(test)
+fit4.pred <- predict(fit4, test, type = "response")
+str(test)
+str(fit4.pred)
+levels(test$default) <- c("FALSE.","TRUE.")
+test$default <- as.factor(test$default)
+str(test$default)
+ActualNew <-test$default
+
+confusionMatrix(reference = ActualNew, data = fit4.pred)
+
+```
+```{r}
+# Training on FUll data with 1000 trees
+
+# fit5 <- randomForest(x = x, y = y_Random
+#                     , data=train,
+#                     importance=TRUE,
+#                     ntree=500)
+# 
+# fit5
+# 
+# varImpPlot(fit5)
+# 
+# # test our model
+# test <- cleanNames(test)
+# fit5.pred <- predict(fit5, test, type = "response")
+# str(test)
+# str(fit5.pred)
+# levels(test$default) <- c("FALSE.","TRUE.")
+# test$default <- as.factor(test$default)
+# str(test$default)
+# ActualNew <-test$default
+# 
+# confusionMatrix(reference = ActualNew, data = fit5.pred)
+
+```
+
+
+```{r}
+# # Tuning  RF algo
+# 
+# fit5_CV<- train(x = x
+#                , y = y_Random
+#               # Why is this called 'rf'? This is silly given
+#               # its actually wrapping the 'randomForest' package
+#                , method = "rf",
+#                tuneLength=20,
+#               )
+# fit5_CV
+# plot(fit5_CV)
+# 
+# Prediction5 <- predict(fit5_CV, test, type = "raw")
+# 
+# 
+# 
+# confusionMatrix(reference = ActualNew, data = Prediction5)
+# #confusionMatrix(reference = ActualNew, data = Prediction3)
+```
+
+
+
+
+
+
+
+
+
+
+
 
