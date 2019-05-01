@@ -6,13 +6,7 @@ output: html_document
 ---
 
 ```{r}
-install.packages("randomForest")
 library(randomForest)
-library(dplyr)
-```
-
-
-```{r}
 library(dplyr)
 library(caret)
 library(lubridate)
@@ -24,40 +18,347 @@ library(leaps)
 library(MASS)
 library(ggplot2)
 library(standardize)
+library(rpart)
+library(mlbench)
+library(caret)
+library(tidyverse)
+library(rpart.plot)
+library(RColorBrewer)
 ```
 
 ```{r}
-df <- read.csv("TransfromedData_1.csv", header = TRUE)
-
+df <- read.csv("TransfromedData2.csv", header = TRUE)
+str(df)
 ```
 ```{r}
-df = subset(df, select = -c(X.1) )
-
-vars_to_remove <- c("X","X.1", "addr_state", "issue_d", "earliest_cr_line", "GeoName", "application_type")
+vars_to_remove <- c("X")
 
 df1 <- df[, ! names(df) %in% vars_to_remove, drop = F]
-colnames(df1)
+str(df1)
 ```
+
+
+```{r}
+# We'll do stratified sampling to split our data into training and test sets
+set.seed(1)
+
+targetVar <- 'default'
+inTrain <- createDataPartition(y = df1[,targetVar], list = FALSE, p = .8)
+train <- df1[inTrain,]
+test <- df1[-inTrain,]
+stopifnot(nrow(train) + nrow(test) == nrow(df1))
+str(df1)
+```
+```{r}
+# Imbalanced data - under-sampling
+# Under-sampling balances the dataset by reducing the size of the abundant class. This method is used when quantity of # data is sufficient. By keeping all samples in the rare class and randomly selecting an equal number of samples in   # the abundant class, a balanced new dataset can be retrieved for further modelling.
+
+xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
+           "home_ownership", "annual_inc", "verification_status", "purpose",
+           "dti", "open_acc", "pub_rec", "total_acc", "initial_list_status", 
+           "Compensation.of.employees", "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
+           "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", "Subsidies", 
+           "Taxes.on.production.and.imports", "regions" )
+
+
+train_down <- 
+  caret::downSample(x = train[, xVars], 
+                    y = as.factor(train$default), yname = "default")
+
+base::prop.table(table(train_down$default))
+base::table(train_down$default)
+```
+
+```{r}
+# Model Formula
+
+createModelFormula <- function(targetVar, xVars, includeIntercept = TRUE){
+  if(includeIntercept){
+    modelForm <- as.formula(paste(targetVar, "~", paste(xVars, collapse = '+ ')))
+  } else {
+    modelForm <- as.formula(paste(targetVar, "~", paste(xVars, collapse = '+ '), -1))
+  }
+  return(modelForm)
+}
+
+modelForm <- createModelFormula(targetVar, xVars)
+
+```
+
+
+```{r}
+#Base model fro decision tree 
+
+targetVar<- train_down$default
+fit <- rpart(modelForm,
+             data=train_down,
+             method="class")
+
+fit
+summary(fit)
+
+prp(fit)
+
+## Predicting on test data
+fit.pred = predict(fit, test, type="class")
+
+## misclassification table
+with(test, table(fit.pred, default))
+
+## Confusion matrix 
+test[,'fit.pred'] <- fit.pred
+confusionMatrix(table(test$fit.pred, test$default))
+```
+```{r}
+varImp(fit)
+
+#   Problem : Plotting VarImp in barplot
+#   varImp(fit)$importance %>%
+#   as.data.frame() %>%
+#   rownames_to_column() %>%
+#   arrange(Overall) %>%
+#   mutate(rowname = forcats::fct_inorder(rowname )) %>%
+#   ggplot()+
+#     geom_col(aes(x = rowname, y = Overall))+
+#     coord_flip()+
+#     theme_bw()
+
+# most important variables are interest rate, Initial list status, Quantity.indexes.for.real.GDP.by.state
+
+```
+```{r}
+#cross validation to optimizes Hyperparameter tuning on decision tree
+
+train_ctrl <- trainControl(method = "repeatedcv"
+                       , number = 10, repeats = 3
+                       , classProbs = TRUE
+                       , summaryFunction = twoClassSummary  
+                       , search = "grid"
+                       , verboseIter = FALSE
+                       , allowParallel = TRUE
+                       )
+x = train[,xVars]
+
+
+y = as.factor(train[, targetVar])
+cleanNames <- function(x){
+feature.names=names(x)
+  for (f in feature.names) {
+    if (class(x[[f]])=="factor") {
+      levels <- unique(c(x[[f]]))
+      x[[f]] <- factor(x[[f]],
+                       labels=make.names(levels))
+    }
+  }
+return(x)}
+
+xOld <- x
+x <- cleanNames(x)
+y = make.names(y)
+
+Cross_fit<- train(x = x
+               , y = y
+               , method = "rpart",
+               # This is telling caret to test 20 options of the
+               # hyperparameters (tuning variables) for this
+               # model. Supposedly caret should know for rpart
+               # what variables to tune. In practice, bugs are
+               # aplenty!
+               tuneLength=20,
+               metric = "ROC",
+               trControl = train_ctrl)
+
+
+
+Cross_fit
+
+```
+```{r}
+# Let's extract the model that caret developed at plot it
+
+ggplot(Cross_fit)
+fit2 <- Cross_fit$finalModel
+prp(fit2)
+
+test <- cleanNames(test)
+
+fit2.pred <- predict(Cross_fit, test, type = "raw")
+
+str(test)
+str(fit2.pred)
+
+levels(test$default) <- c("FALSE.","TRUE.")
+test$default <- as.factor(test$default)
+str(test$default)
+ActualNew <-test$default
+
+confusionMatrix(reference = ActualNew, data = fit2.pred)
+
+```
+
+
+
 
 
 
 ```{r}
-# Split into Train and Validation sets
-# Training Set : Validation Set = 70 : 30 (random)
-set.seed(100)
-train <- sample(nrow(df1), 0.8*nrow(df1), replace = FALSE)
-TrainSet <- df1[train,]
-ValidSet <- df1[-train,]
-#summary(TrainSet)
-#summary(ValidSet)
+library(MASS)
+require(randomForest)
+set.seed(101)
+
+rf.default = randomForest(default~., data = train_down)
+rf.default
+```
+
+
+```{r}
+## Predicting on test data
+rf.default.pred = predict(rf.default, test, type="class")
+
+## misclassification table
+with(test, table(rf.default.pred, default))
+
+## Confusion matrix 
+test[,'rf.default.pred'] <- rf.default.pred
+confusionMatrix(table(test$rf.default.pred, test$default))
+
+# Specifivity increased significantly 
+
+```
+
+```{r}
+#Random Forest
+ctrl <- 
+  trainControl(method = "repeatedcv", 
+               number = 10,
+               repeats = 5,
+               classProbs = TRUE,
+               summaryFunction = twoClassSummary,
+               verboseIter = FALSE,
+               allowParallel = TRUE,
+               search = "random")
+
+rf_model_rpart <-
+  train_down %>%
+  mutate(default = as.factor(ifelse(default == TRUE, "yes", "no"))) %>%
+  filter(complete.cases(.)) %>%
+  train(default ~ .,
+        data = .,
+        method = 'rpart',
+        metric = "ROC",
+        preProc = c("center", "scale"),
+        trControl = ctrl)
+
+rf_model_rpart
+#ROC went up to 75% , sensitivity and specivity also increased 
+
+varImp(rf_model_rpart)
+```
+
+```{r}
+plot(rf_model_rpart$finalModel, uniform = TRUE, margin = 0.1)
+graphics::text(rf_model_rpart$finalModel, cex = 0.5)
 ```
 ```{r}
-model1 <- randomForest(loan_status ~ YearBefore+loan_amnt+installment+term+int_rate+grade+
-                         home_ownership+annual_inc+verification_status+loan_status+purpose+dti+
-                         open_acc+pub_rec+total_acc+initial_list_status+Compensation.of.employees+
-                         Gross.operating.surplus+Per.capita.real.GDP.by.state+Quantity.indexes.for.real.GDP.by.state+
-                         Real.GDP.by.state+Subsidies+Taxes.on.production.and.imports+regions,
-                       data = TrainSet, importance = TRUE)
-model1
+## Predicting on test data
+rf_model_rpart_pred <- 
+  predict(rf_model_rpart, 
+          newdata = test,
+          type = "prob")
+model_pred_t<- as.factor(ifelse(rf_model_rpart_pred[,"yes"] > .5, "TRUE", "FALSE"))
+test[,'model_pred_t'] <- model_pred_t
+
+confusionMatrix(table(test$model_pred_t, test$default))
+
+# Specifivity increased significantly 
+
 ```
+
+
+```{r}
+plot(fit3CV)
+# Let's extract the model that caret developed at plot it
+fit3 <- fit3CV$finalModel
+#prp(fit3)
+
+test <- cleanNames(test)
+Prediction3 <- predict(fit3CV, test, type = "raw")
+# Look at difference in Survived variable
+# We are annoyed and shake our fist in the air
+str(test)
+str(Prediction3)
+levels(test$default) <- c("FALSE.","TRUE.")
+test$default <- as.factor(test$default)
+str(test$default)
+ActualNew <-test$default
+
+confusionMatrix(reference = ActualNew, data = Prediction3)
+
+```
+
+```{r}
+# Let's try a random forest model.
+#install.packages('randomForest')
+library(randomForest)
+
+# Notice how this takes significantly longer than fitting a
+# decision tree, but still pretty fast!
+yRf <-as.factor(y)
+fit4 <- randomForest(x = x, y = yRf
+                    , data=train_down,
+                    importance=TRUE,
+                    # fit 2000 decision trees!
+                    ntree=100)
+
+fit4
+
+
+
+# Again, let's test our model
+Prediction4 <- predict(fit4, test, type = "response")
+
+
+# Hmmm, this model isn't quite as good as our best previous model
+confusionMatrix(reference = ActualNew, data = Prediction4)
+confusionMatrix(reference = ActualNew, data = Prediction3)
+
+```
+
+
+```{r}
+# Let's try to use caret again to tune our RF algo
+fit5CV<- train(x = x
+               , y = yRf
+              # Why is this called 'rf'? This is silly given
+              # its actually wrapping the 'randomForest' package
+               , method = "rf",
+               tuneLength=20,
+              )
+fit5CV
+plot(fit5CV)
+
+Prediction5 <- predict(fit5CV, test, type = "raw")
+
+
+# Still not better!
+confusionMatrix(reference = ActualNew, data = Prediction5)
+confusionMatrix(reference = ActualNew, data = Prediction3)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

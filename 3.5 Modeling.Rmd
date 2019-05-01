@@ -17,32 +17,36 @@ library(MASS)
 library(ggplot2)
 library(standardize)
 library(Amelia)
+library(ROCR)
 ```
 
 ```{r}
-df <- read.csv("TransfromedData_1.csv", header = TRUE)
+df <- read.csv("TransfromedData1.csv", header = TRUE)
 summary(df)
-table(df$YearBefore)
+#table(df$YearBefore)
+```
+```{r}
+df <-
+  df %>%
+  mutate(default = ifelse(!(loan_status %in% "Defaulted"), FALSE, TRUE))
+table(df$default)
+df %>%
+  summarise(default_freq = sum(default / n()))
+table(df$default) / nrow(df)
 ```
 
+
 ```{r}
-vars_to_remove <- c("X.1", "X","YearBefore","addr_state", "issue_d", "earliest_cr_line", "GeoName")
+vars_to_remove <- c("X.1", "X","YearBefore","addr_state", "issue_d", "earliest_cr_line", "GeoName", "loan_status")
 
 df1 <- df[, ! names(df) %in% vars_to_remove, drop = F]
 str(df1)
 ```
 
 ```{r}
-
-df1$dti <- as.numeric(df1$dti)
-table(df1$loan_status)
-
-```
-
-```{r}
 # We'll do stratified sampling to split our data into training and test sets
 
-targetVar <- 'loan_status'
+targetVar <- 'default'
 inTrain <- createDataPartition(y = df1[,targetVar], list = FALSE, p = .8)
 train <- df1[inTrain,]
 test <- df1[-inTrain,]
@@ -52,12 +56,25 @@ names(df1)
 
 ```{r}
 xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
-           "home_ownership", "annual_inc", "verification_status", "purpose",
+           "home_ownership", "annual_inc", "verification_status","pymnt_plan", "purpose",
            "dti", "open_acc", "pub_rec", "total_acc", "initial_list_status", 
            "Compensation.of.employees", "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
            "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", "Subsidies", 
-           "Taxes.on.production.and.imports", "regions" )
+           "Taxes.on.production.and.imports", "regions", "month" )
 ```
+
+```{r}
+# Imbalanced data - under-sampling
+train_down <- 
+  caret::downSample(x = train[, xVars], 
+                    y = as.factor(train$default), yname = "default")
+
+base::prop.table(table(train_down$default))
+base::table(train_down$default)
+```
+
+
+
 
 ```{r}
 # Formula Function
@@ -76,183 +93,187 @@ createModelFormula <- function(targetVar, xVars, includeIntercept = TRUE){
 
 ```{r}
 # Building model with all variables
-modelForm <- createModelFormula(targetVar, xVars, includeIntercept = F)
+modelForm <- createModelFormula(targetVar, xVars, includeIntercept = T)
 
-model <- glm(modelForm,family=binomial(link='logit'),data=train)
+full_model <- glm(modelForm,family=binomial(link='logit'),data=train_down)
 
-summary(model)
-
-```
-```{r}
-predictors(model)
-```
-
-```{r}
-varImp(model)
+summary(full_model)
 
 ```
 
 ```{r}
-anova(model, test="Chisq")
-```
-```{r}
-# testing model on test data set
+full_model_Pred <- 
+  predict.glm(object = full_model, newdata = test, type = "response")
+model_pred_t<- unname(ifelse(full_model_Pred > .5, TRUE, FALSE))
+test[,'model_pred_t'] <- model_pred_t
 
-fitted.results <- predict(model
-                          ,newdata = test[,xVars]
-                          # Specifying response means we want the probabilities
-                          ,type='response')
-hist(fitted.results)
+confusionMatrix(table(test$model_pred_t, test$default)) 
 
-test[,'fitted.results'] <- fitted.results
-```
+# Let's look at the ROC curve
+pr <- prediction(full_model_Pred, test$default)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
 
-```{r}
-# We output the probabilities, but we want to turn the probabilities into
-# a classification of survived or not. .5 is a reasonable starting cutoff.
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
 
-default.pred <- ifelse(fitted.results > 0.5,"Not Defaulted","Defaulted")
-default.pred <- as.factor(default.pred)
-
-class(default.pred)
-class(test[,targetVar])
-
-table(default.pred)
-table(test[,targetVar])
-
-
-```
-```{r}
-# Let's use a confusion matrix to evaluate how good our results are
-confusion <- confusionMatrix(default.pred, test[,targetVar])                             
-confusion
-```
-
-
-```{r}
-Model1 <- stepAIC(model, direction = "forward")
 ```
 
 ```{r}
-Model2 <- stepAIC(model, direction = "backward")
+varImp(full_model)
 
 ```
 ```{r}
-Model_Step <- stepAIC(model, direction = "both", )
+# Building model for VarImp variables
+
+test_model <- glm(default~int_rate+grade+annual_inc+purpose+pub_rec+initial_list_status+Quantity.indexes.for.real.GDP.by.state+Real.GDP.by.state+month+Taxes.on.production.and.imports-1,family=binomial(link='logit'), data=train_down, na.action = na.exclude)
+
+x <- c("int_rate","grade","annual_inc","purpose","pub_rec","initial_list_status","Quantity.indexes.for.real.GDP.by.state","Real.GDP.by.state","month", "Taxes.on.production.and.imports")
+
+test_model_Pred <- 
+  predict.glm(object = test_model, newdata = test, type = "response")
+model_pred_t<- unname(ifelse(test_model_Pred > .5, TRUE, FALSE))
+test[,'model_pred_t'] <- model_pred_t
+
+confusionMatrix(table(test$model_pred_t, test$default))
+
+# Let's look at the ROC curve
+pr <- prediction(test_model_Pred, test$default)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+
+
 ```
 
 ```{r}
-anova(model, Model_Step)
+# Building model with No variables
+model_Null <- glm(default ~ 1,family=binomial(link='logit'),data=train_down)
+summary(model_Null)
+
+Model_forward <- stepAIC(model_Null, direction = "forward", scope=list(upper=full_model,lower=model_Null))
 ```
 
 
 ```{r}
-# Only three variable model 
+model1 <- glm(default ~ Per.capita.real.GDP.by.state, family=binomial(link='logit'),data=train_down)
+summary(model1)
+x <- c("Per.capita.real.GDP.by.state")
 
-xVars3 <- c("Subsidies", "Compensation.of.employees", "open_acc")
+model1_Pred <- 
+  predict.glm(object = model1, newdata = test, type = "response")
+model_pred_t<- unname(ifelse(model1_Pred > .5, TRUE, FALSE))
+test[,'model_pred_t'] <- model_pred_t
 
-modelForm <- createModelFormula(targetVar, xVars3)
+confusionMatrix(table(test$model_pred_t, test$default))
+hist(model1_Pred)
 
-model_final2 <- glm(modelForm,family=binomial(link='logit'),data=train)
+# Let's look at the ROC curve
+pr <- prediction(model1_Pred, test$default)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
 
-summary(model_final2)
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+
+
+#this looks really bad model
 ```
 
 ```{r}
-fitted.results <- predict(model_final2
-                          ,newdata = test[,xVars3]
-                          # Specifying response means we want the probabilities
-                          ,type='response')
+Model_backward <- stepAIC(full_model, direction = "backward")
 
-test[,'fitted.results'] <- fitted.results
-
-# We output the probabilities, but we want to turn the probabilities into
-# a classification of survived or not. .5 is a reasonable starting cutoff.
-
-default.pred <- ifelse(fitted.results > 0.5,"Not Defaulted","Defaulted")
-default.pred <- as.factor(default.pred)
-
-class(default.pred)
-class(test[,targetVar])
-
-table(default.pred)
-table(test[,targetVar])
-
-# Let's use a confusion matrix to evaluate how good our results are
-confusion <- confusionMatrix(default.pred, test[,targetVar])                             
-confusion
 ```
 ```{r}
-# removing the above three varibles and building final model
-# We'll do stratified sampling to split our data into training and test sets
 
-targetVar <- 'loan_status'
-inTrain1 <- createDataPartition(y = df1[,targetVar], list = FALSE, p = .8)
-train1 <- df1[inTrain,]
-test1 <- df1[-inTrain,]
-stopifnot(nrow(train1) + nrow(test1) == nrow(df1))
+model2 <- glm(default ~ term+Per.capita.real.GDP.by.state+Real.GDP.by.state, family=binomial(link='logit'),data=train_down)
+summary(model2)
+x2 <- c( "term",
+           "Per.capita.real.GDP.by.state", 
+           "Real.GDP.by.state")
 
-xVars1 <- c("loan_amnt", "term", "int_rate", "installment", "grade",
-           "home_ownership", "annual_inc", "verification_status", "purpose",
-           "dti", "pub_rec", "total_acc", "initial_list_status", 
-           "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
-           "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", 
-           "Taxes.on.production.and.imports", "regions" )
-# Formula Function
+model2_Pred <- 
+  predict.glm(object = model2, newdata = test, type = "response")
+model_pred_t<- unname(ifelse(model2_Pred > .5, TRUE, FALSE))
+test[,'model_pred_t'] <- model_pred_t
 
-createModelFormula <- function(targetVar, xVars1, includeIntercept = TRUE){
-  if(includeIntercept){
-    modelForm <- as.formula(paste(targetVar, "~", paste(xVars1, collapse = '+ ')))
-  } else {
-    modelForm <- as.formula(paste(targetVar, "~", paste(xVars1, collapse = '+ '), -1))
-  }
-  return(modelForm)
-}
+confusionMatrix(table(test$model_pred_t, test$default))
+hist(model2_Pred)
 
-# Building model with all variables
-modelForm <- createModelFormula(targetVar, xVars1, includeIntercept = F)
+# Let's look at the ROC curve
+pr <- prediction(model2_Pred, test$default)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
 
-model_final <- glm(modelForm,family=binomial(link='logit'),data=train1)
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
 
-summary(model_final)
+
+
 ```
 
 ```{r}
-# testing model on test data set
+Model_Step <- stepAIC(full_model, direction = "both" )
+```
 
-fitted.results <- predict(model_final
-                          ,newdata = test1[,xVars1]
-                          # Specifying response means we want the probabilities
-                          ,type='response')
-hist(fitted.results)
+```{r}
+model3 <- glm(default ~ term+Per.capita.real.GDP.by.state, family=binomial(link='logit'),data=train_down)
+summary(model3)
+x3 <- c( "term",
+           "Per.capita.real.GDP.by.state")
 
-test1[,'fitted.results'] <- fitted.results
+model3_Pred <- 
+  predict.glm(object = model3, newdata = test, type = "response")
+model_pred_t<- unname(ifelse(model3_Pred > .5, TRUE, FALSE))
+test[,'model_pred_t'] <- model_pred_t
 
-# We output the probabilities, but we want to turn the probabilities into
-# a classification of survived or not. .5 is a reasonable starting cutoff.
+confusionMatrix(table(test$model_pred_t, test$default))
+hist(model3_Pred)
 
-default.pred <- ifelse(fitted.results > 0.5,"Not Defaulted","Defaulted")
-default.pred <- as.factor(default.pred)
+# Let's look at the ROC curve
 
-class(default.pred)
-class(test1[,targetVar])
+pr <- prediction(model3_Pred, test$default)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
 
-table(default.pred)
-table(test1[,targetVar])
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
 
-# Let's use a confusion matrix to evaluate how good our results are
-confusion <- confusionMatrix(default.pred, test1[,targetVar])                             
-confusion
+```
+
+```{r}
+library(earth)
+marsModel <- earth(default ~ ., data=train_down) # build model
+ev <- evimp (marsModel)
+ev
 ```
 ```{r}
-# Our first model with all variables was better
-```
+model4 <- glm(default ~ int_rate+Quantity.indexes.for.real.GDP.by.state+month+annual_inc+initial_list_status+Real.GDP.by.state+Per.capita.real.GDP.by.state+Compensation.of.employees+Gross.operating.surplus+regions+Subsidies+Taxes.on.production.and.imports+dti, family=binomial(link='logit'), data=train_down)
 
+summary(model4)
+
+x3 <- c("int_rate","Quantity.indexes.for.real.GDP.by.state","month","annual_inc","initial_list_status","Real.GDP.by.state","Per.capita.real.GDP.by.state","Compensation.of.employees","Gross.operating.surplus","regions","Subsidies","Taxes.on.production.and.imports","dti")
+
+model4_Pred <- 
+  predict.glm(object = model4, newdata = test, type = "response")
+model_pred_t<- unname(ifelse(model3_Pred > .5, TRUE, FALSE))
+test[,'model_pred_t'] <- model_pred_t
+
+confusionMatrix(table(test$model_pred_t, test$default))
+hist(model4_Pred)
+```
 
 ```{r}
 # Let's look at the ROC curve
 library(ROCR)
-pr <- prediction(fitted.results, test$loan_status)
+pr <- prediction(model4_Pred, test$default)
 prf <- performance(pr, measure = "tpr", x.measure = "fpr")
 plot(prf)
 
@@ -265,15 +286,15 @@ auc
 # Let's look at the precision recall curves
 # install.packages('DMwR')
 library('DMwR')
-PRcurve(preds = fitted.results, trues = test$loan_status)
+PRcurve(preds = model4_Pred, trues = test$default)
 
 # Let's take a look at the deviance
 llcomponents <- function(y, predicted.y){
   return(y*log(predicted.y) + (1-y)*log(1-predicted.y))
 }
-y <- train[,targetVar]
-predicted.y <- predict(model
-                       ,newdata = train[,xVars]
+y <- train_down[,targetVar]
+predicted.y <- predict(model4
+                       ,newdata = train_down[,x3]
                        # Specifying response means we want the probabilities
                        ,type='response')
 
@@ -283,91 +304,115 @@ summary(deviance)
 ```
 
 ```{r}
+# Primary data model 
+xPrimary <- c("loan_amnt", "term", "int_rate", "installment", "grade",
+           "home_ownership", "annual_inc", "verification_status","pymnt_plan", "purpose",
+           "dti", "open_acc", "pub_rec", "total_acc", "initial_list_status", 
+           "regions", "month" )
+
+modelForm <- createModelFormula(targetVar, xPrimary, includeIntercept = T)
+
+Primary_model <- glm(modelForm,family=binomial(link='logit'),data=train_down)
+
+summary(Primary_model)
+
+Primary_model_Pred <- 
+  predict.glm(object = Primary_model, newdata = test, type = "response")
+model_pred_t<- unname(ifelse(Primary_model_Pred > .5, TRUE, FALSE))
+test[,'model_pred_t'] <- model_pred_t
+
+confusionMatrix(table(test$model_pred_t, test$default))
+hist(Primary_model_Pred)
+
+# Let's look at the ROC curve
+pr <- prediction(Primary_model_Pred, test$default)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+
+```
+
+```{r}
+library(party)
+cf1 <- cforest(default ~ . , data= train_down, control=cforest_unbiased(mtry=2,ntree=50))
+cf1
+```
+```{r}
+model5 <- glm(default ~ loan_amnt+ term+ int_rate+ installment+ grade+ home_ownership+ annual_inc+ verification_status+ pymnt_plan+ purpose+ dti+ open_acc+ pub_rec+ total_acc+ initial_list_status+ Compensation.of.employees+ Gross.operating.surplus+ Per.capita.real.GDP.by.state+ Quantity.indexes.for.real.GDP.by.state+ Real.GDP.by.state+ Subsidies+ Taxes.on.production.and.imports+ regions+ month , family=binomial(link='logit'), data=train_down)
+
+summary(model5)
+
+model5_Pred <- 
+  predict.glm(object = model5, newdata = test, type = "response")
+model_pred_t<- unname(ifelse(model5_Pred > .5, TRUE, FALSE))
+test[,'model_pred_t'] <- model_pred_t
+
+confusionMatrix(table(test$model_pred_t, test$default))
+hist(model5_Pred)
+```
+```{r}
+#leaps (regression subset selection)
+require(leaps)
+require(MASS)
+regsubsets.out <- regsubsets(default ~ loan_amnt+ term+ int_rate+ installment+ grade+ home_ownership+ annual_inc+ verification_status+ pymnt_plan+ purpose+ dti+ open_acc+ pub_rec+ total_acc+ initial_list_status+ Compensation.of.employees+ Gross.operating.surplus+ Per.capita.real.GDP.by.state+ Quantity.indexes.for.real.GDP.by.state+ Real.GDP.by.state+ Subsidies+ Taxes.on.production.and.imports+ regions+ month, data=train_down, nbest= 1, method= "exhaustive")
+summary(regsubsets.out)
+
+#Best model at each variable number
+summary.out <- summary(regsubsets.out)
+as.data.frame(summary.out$outmat)
+```
+```{r}
+## Adjusted R2
+plot(regsubsets.out, scale = "adjr2", main = "Adjusted R^2")
+```
+
+
+```{r}
+library(car)
+layout(matrix(1:1, ncol = 1))
+## Adjusted R2
+## This is just another way of presenting the same information for adjusted \( R^2 \)
+res.legend <-
+    subsets(regsubsets.out, statistic="adjr2", legend = FALSE, min.size = 5, main = "Adjusted R^2")
+## Mallow Cp
+## Mallow Cp is used to decide on the number of predictors to include. 
+res.legend <-
+    subsets(regsubsets.out, statistic="cp", legend = FALSE, min.size = 5, main = "Mallow Cp")
+abline(a = 1, b = 1, lty = 2)
+res.legend
+```
+```{r}
+## See which model has the highest adjusted R2
+which.max(summary.out$adjr2)
+```
+
+```{r}
+summary.out$which[8,]
+```
+```{r}
+#building model with our best variables
+final_model <- glm(default ~ term+pub_rec+initial_list_status+Quantity.indexes.for.real.GDP.by.state+ int_rate+
+                     annual_inc+ Real.GDP.by.state+ month, family=binomial(link='logit'), data=train_down)
+
+summary(final_model)
+
+#x3 <- c("int_rate","Quantity.indexes.for.real.GDP.by.state","month","annual_inc","initial_list_status","Real.GDP.by.state","Per.capita.real.GDP.by.state","Compensation.of.employees","Gross.operating.surplus","regions","Subsidies","Taxes.on.production.and.imports","dti")
+
+final_model_Pred <- 
+  predict.glm(object = final_model, newdata = test, type = "response")
+model_pred_t<- unname(ifelse(final_model_Pred > .5, TRUE, FALSE))
+test[,'model_pred_t'] <- model_pred_t
+
+confusionMatrix(table(test$model_pred_t, test$default))
+hist(final_model_Pred)
+
 # Pseudo-R**2
-mod <- glm(loan_status~loan_amnt+term+int_rate+installment+grade+
-           home_ownership+annual_inc+verification_status+purpose+
-           dti+open_acc+pub_rec+total_acc+initial_list_status+ 
-           Compensation.of.employees+Gross.operating.surplus+Per.capita.real.GDP.by.state+ 
-           Quantity.indexes.for.real.GDP.by.state+Real.GDP.by.state+Subsidies+ 
-           Taxes.on.production.and.imports+regions , family="binomial", data = train)
-nullmod <- glm(loan_status~1, family="binomial", data = train)
-1-logLik(mod)/logLik(nullmod)
-
+nullmod <- glm(default~1, family="binomial", data = train_down)
+1-logLik(final_model)/logLik(nullmod)
 ```
-
-
-
-```{r}
-library(earth)
-marsModel <- earth(loan_status ~ ., data=df1) # build model
-ev <- evimp (marsModel)
-ev
-```
-```{r}
-model_feature <- glm(loan_status~int_rate+Quantity.indexes.for.real.GDP.by.state+annual_inc+
-                       initial_list_status +Taxes.on.production.and.imports,
-                     family=binomial(link='logit'),data=train)
-
-features <- c("int_rate","Quantity.indexes.for.real.GDP.by.state","annual_inc",
-                       "initial_list_status","Taxes.on.production.and.imports")
-```
-
-```{r}
-# testing model on test data set
-
-fitted.results <- predict(model_feature
-                          ,newdata = test[,features]
-                          # Specifying response means we want the probabilities
-                          ,type='response')
-hist(fitted.results)
-
-test[,'fitted.results'] <- fitted.results
-
-# We output the probabilities, but we want to turn the probabilities into
-# a classification of survived or not. .5 is a reasonable starting cutoff.
-
-default.pred <- ifelse(fitted.results > 0.5,"Not Defaulted","Defaulted")
-default.pred <- as.factor(default.pred)
-
-class(default.pred)
-class(test[,targetVar])
-
-table(default.pred)
-table(test[,targetVar])
-
-# Let's use a confusion matrix to evaluate how good our results are
-confusion <- confusionMatrix(default.pred, test[,targetVar])                             
-confusion
-```
-```{r}
-#We found that No Information rate is higher than any of our any model
-```
-
-
-```{r}
-
-# ensure results are repeatable
-set.seed(7)
-# load the library
-library(mlbench)
-library(caret)
-# load the dataset
-df1
-# prepare training scheme
-control <- trainControl(method="repeatedcv", number=10, repeats=3)
-# train the model
-model <- train(loan_status~., data=df1, method="lvq", preProcess="scale", trControl=control)
-
-# estimate variable importance
-importance <- varImp(model, scale=FALSE)
-
-# summarize importance
-print(importance)
-# plot importance
-plot(importance)
-
-```
-
 
 
 
