@@ -20,6 +20,8 @@ library(cluster)
 library(ggplot2)
 library(plotly)
 library(purrr)
+library(dbscan)
+library(caret)
 ```
 
 
@@ -69,9 +71,9 @@ I played with a sample of data, because visializing almost a million rows is qui
 
 set.seed(1)
 # Take a stratified sample of data
-dfs <- stratified(df, c("loan_status"), 2000)
+dfs <- stratified(df, c("loan_status"), 0.01)
 
-write.csv(dfs, file = "TransfromedData_1_sample.csv", row.names=FALSE)
+write.csv(space, file = "space_3d.csv", row.names=FALSE)
 
 summary(dfs)
 colnames(dfs)
@@ -132,20 +134,188 @@ plot_ly(tsne_data, x = ~x_coord, y = ~y_coord,
         alpha=0.5)
 ```
 ```{r}
-
+gower_dist <- dfs %>% select(-c(loan_status, addr_state)) %>% daisy(
+                    metric = "gower")
 tsne_obj <- Rtsne(gower_dist, is_distance = TRUE, perplexity=50, dims=3)
 
 tsne_data <- tsne_obj$Y %>%
   data.frame() %>%
-  setNames(c("x_coord", "y_coord", "z_coord")) %>%
-  cbind(dfs)
+  setNames(c("x_coord", "y_coord", "z_coord")) 
 
-plot_ly(tsne_data, x = ~x_coord, y = ~y_coord, z = ~z_coord, 
+plot_ly(tsne_data %>% cbind(dfs)
+        , x = ~x_coord, y = ~y_coord, z = ~z_coord, 
         color = ~loan_status, 
         shape = ~purpose,
         mode='markers',
         hoverinfo = 'text',
         text = ~paste('Purpose', dfs$purpose) # TODO display all relevant data
         )
+```
+
+```{r}
+
+# validate t-SNE results
+set.seed(1)
+trainIndex <- createDataPartition(y = dfs$loan_status, list=F, p = 0.8)
+
+opt <- optics(tsne_data, minPts = 50)
+clust <- extractXi(opt, xi = 0.02)
+
+# mark test rows
+dfs$test <- F
+dfs$test[-trainIndex] <- T
+
+space <- tsne_data %>% cbind(dfs, cluster = clust$cluster) %>%
+  group_by(cluster) %>%
+  mutate(cluster_default_rate = 
+           ifelse(sum(test == F) != 0, 
+                  sum(loan_status == 'Defaulted' && test == F) / sum(test == F), 
+                  0)) %>%
+  ungroup()
+
+threshold <- 0.015
+predicted <- space[-trainIndex, 'cluster_default_rate'] >= threshold
+true <- space[-trainIndex, 'loan_status'] == 'Defaulted'
+confusionMatrix(predicted, true, positive = 'TRUE')
+
+
+p <- plot_ly() %>% add_trace(x = space$x_coord, y = space$y_coord, z = space$z_coord, 
+        mode='markers',
+        hoverinfo = 'text',
+        marker=list(
+          color = space$cluster_default_rate, 
+          colorscale='RdYlBu',
+          colorbar=list(title='Default rate')
+        ),
+        text = ~paste('</br>Cluster', clust$cluster, 
+                      '</br>Cluster default rate:', space$cluster_default_rate, 
+                      '</br>Purpose', space$purpose), # TODO display all relevant data,
+        type = "scatter3d"
+        ) 
+p
+
+new_data_point <- space[space$test == T, ][5,]
+
+p %>% layout(scene = list(
+      aspectratio = list(
+        x = 1,
+        y = 1,
+        z = 1
+      ),
+      camera = list(
+        center = list(
+          x = 0,
+          y = 0,
+          z = 0
+        ),
+        eye = list(
+          x = 1.96903462608,
+          y = -1.09022831971,
+          z = 0.405345349304
+        ),
+        up = list(
+          x = 0,
+          y = 0,
+          z = 1
+        )
+      ), annotations = list(list(
+        showarrow = T,
+        # datapoint coordinates:
+        x = new_data_point$x_coord,
+        y = new_data_point$y_coord,
+        z = new_data_point$z_coord,
+        text = "New loan application",
+        xshift = 0,
+        opacity = 1
+      ))))
+```
+
+```{r}
+plot_ly() %>%
+  add_trace(
+    x = c("2017-01-01", "2017-02-10", "2017-03-20"), 
+    y = c("A", "B", "C"), 
+    z = c(1, 1000, 100000), 
+    name = "z", 
+    type = "scatter3d"
+  ) %>% 
+  layout(
+    scene = list(
+      aspectratio = list(
+        x = 1,
+        y = 1,
+        z = 1
+      ),
+      camera = list(
+        center = list(
+          x = 0,
+          y = 0,
+          z = 0
+        ),
+        eye = list(
+          x = 1.96903462608,
+          y = -1.09022831971,
+          z = 0.405345349304
+        ),
+        up = list(
+          x = 0,
+          y = 0,
+          z = 1
+        )
+      ),
+      dragmode = "turntable",
+      xaxis = list(
+        title = "",
+        type = "date"
+      ),
+      yaxis = list(
+        title = "",
+        type = "category"
+      ),
+      zaxis = list(
+        title = "",
+        type = "log"
+      ),
+      annotations = list(list(
+        showarrow = F,
+        x = "2017-01-01",
+        y = "A",
+        z = 0,
+        text = "Point 1",
+        xanchor = "left",
+        xshift = 10,
+        opacity = 0.7
+      ), list(
+        x = "2017-02-10",
+        y = "B",
+        z = 4,
+        text = "Point 2",
+        textangle = 0,
+        ax = 0,
+        ay = -75,
+        font = list(
+          color = "black",
+          size = 12
+        ),
+        arrowcolor = "black",
+        arrowsize = 3,
+        arrowwidth = 1,
+        arrowhead = 1
+      ), list(
+        x = "2017-03-20",
+        y = "C",
+        z = 5,
+        ax = 50,
+        ay = 0,
+        text = "Point 3",
+        arrowhead = 1,
+        xanchor = "left",
+        yanchor = "bottom"
+      )
+    )),
+    xaxis = list(title = "x"),
+    yaxis = list(title = "y")
+  )
+
 ```
 
