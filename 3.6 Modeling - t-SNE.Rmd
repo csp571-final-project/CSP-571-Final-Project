@@ -1,0 +1,102 @@
+---
+title: "3.9 Data Visualization"
+author: "Vadym Ovcharenko"
+date: "4/16/2019"
+output: 
+  html_document:
+    smart: false
+---
+
+# Data Visuzalization
+
+In this project, I attempt to execute some of the most interesting data visualization techniques.
+
+```{r}
+# dependencies
+library(Rtsne)
+library(dplyr)
+library(splitstackshape)
+library(cluster)
+library(ggplot2)
+library(plotly)
+library(purrr)
+library(dbscan)
+library(caret)
+```
+
+```{r}
+
+read_data_file <- function(filename) {
+  df <- read.csv(filename, header = T)
+  # drop useless columns 
+  df <- df[, -c(1, 2)]
+  
+  # application_type is very unbalanced, so we will only explore the individual applications
+  # also, I didn't want the time dimension to complicate the visualization, so I dropped the date cols.
+  # additionaly, I wanted the vizualisations to be more demographic, so I dropped variables that are
+  # characteristics of the loan (except purpose)
+  df <- select(df, 
+               -c(
+                 pymnt_plan,
+                 application_type, 
+                 initial_list_status, 
+                 Taxes.on.production.and.imports, # drop state-related variables
+                 Subsidies,
+                 Real.GDP.by.state,
+                 Quantity.indexes.for.real.GDP.by.state,
+                 Per.capita.real.GDP.by.state,
+                 Gross.operating.surplus,
+                 Compensation.of.employees,
+                 GeoName,
+                 month
+               ))
+  
+  # make sure that ordinal variables are ordered
+  df$grade <- factor(df$grade, ordered=T)
+  
+  return(df)
+}
+
+data_portion <- 0.15 # sample size
+
+df_train <- read_data_file('TrainTestData/TrainData.csv')
+set.seed(1)
+# Take a stratified sample of data
+dfs <- df_train
+df_test <- read_data_file('TrainTestData/TestData.csv')
+dfs$test <- F
+df_test$test <- T
+dfs <- rbind(dfs, df_test)
+summary(dfs)
+
+# calculate distance for variables of all types
+#gower_dist <- dfs %>% select(-default) %>% daisy(
+#                    metric = "gower")
+#summary(gower_dist)
+
+tsne_obj <- Rtsne(dfs %>% select(-c(default, test, profit)), perplexity=50, dims=3, verbose = T, pca = F, num_threads = 4, max_iter=800)
+
+tsne_data <- tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("x_coord", "y_coord", "z_coord")) 
+
+opt <- optics(tsne_data, minPts = 50)
+clust <- extractXi(opt, xi = 0.005)
+
+space <- tsne_data %>% cbind(dfs, cluster = clust$cluster) %>%
+  group_by(cluster) %>%
+  mutate(cluster_default_rate = 
+           ifelse(sum(test == F) != 0, 
+                  sum(default == T && test == F) / sum(test == F), 
+                  0)) %>%
+  ungroup()
+
+threshold <- 0.005
+predictions <- space[space$test == T, 'cluster_default_rate']
+true <- space[space$test == T, 'default']$default
+confusionMatrix(predictions >= threshold, true, positive = 'TRUE')
+summary(predictions)
+
+write.csv(predictions, file = "tsne_predictions.csv", row.names=T)
+```
+
