@@ -21,26 +21,21 @@ library(ROCR)
 ```
 
 ```{r}
-df <- read.csv("TransfromedData1.csv", header = TRUE)
-summary(df)
-#table(df$YearBefore)
-```
-```{r}
-df <-
-  df %>%
-  mutate(default = ifelse(!(loan_status %in% "Defaulted"), FALSE, TRUE))
-table(df$default)
-df %>%
-  summarise(default_freq = sum(default / n()))
-table(df$default) / nrow(df)
+train <- read.csv("TrainData.csv", header = TRUE)
+test <- read.csv("TestData.csv", header = TRUE)
+str(train)
+str(test)
+
 ```
 
-
 ```{r}
-vars_to_remove <- c("X.1", "X","YearBefore","addr_state", "issue_d", "earliest_cr_line", "GeoName", "loan_status")
+vars_to_remove <- c("X.1", "X","pymnt_plan", "GeoName", "application_type")
 
-df1 <- df[, ! names(df) %in% vars_to_remove, drop = F]
-str(df1)
+train <- train[, ! names(train) %in% vars_to_remove, drop = F]
+str(train)
+
+test <- test[, ! names(test) %in% vars_to_remove, drop = F]
+str(test)
 ```
 
 ```{r}
@@ -56,7 +51,7 @@ names(df1)
 
 ```{r}
 xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
-           "home_ownership", "annual_inc", "verification_status","pymnt_plan", "purpose",
+           "home_ownership", "annual_inc", "verification_status","purpose",
            "dti", "open_acc", "pub_rec", "total_acc", "initial_list_status", 
            "Compensation.of.employees", "Gross.operating.surplus", "Per.capita.real.GDP.by.state", 
            "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", "Subsidies", 
@@ -95,7 +90,7 @@ createModelFormula <- function(targetVar, xVars, includeIntercept = TRUE){
 # Building model with all variables
 modelForm <- createModelFormula(targetVar, xVars, includeIntercept = T)
 
-full_model <- glm(modelForm,family=binomial(link='logit'),data=train_down)
+full_model <- glm(modelForm,family=binomial(link='logit'),data=train)
 
 summary(full_model)
 
@@ -121,13 +116,14 @@ auc
 ```
 
 ```{r}
-varImp(full_model)
+varImp<- varImp(full_model)
+varImp
 
 ```
 ```{r}
 # Building model for VarImp variables
 
-test_model <- glm(default~int_rate+grade+annual_inc+purpose+pub_rec+initial_list_status+Quantity.indexes.for.real.GDP.by.state+Real.GDP.by.state+month+Taxes.on.production.and.imports-1,family=binomial(link='logit'), data=train_down, na.action = na.exclude)
+test_model <- glm(default~int_rate+grade+annual_inc+purpose+pub_rec+initial_list_status+Quantity.indexes.for.real.GDP.by.state+Real.GDP.by.state+month+Taxes.on.production.and.imports-1,family=binomial(link='logit'), data=train, na.action = na.exclude)
 
 x <- c("int_rate","grade","annual_inc","purpose","pub_rec","initial_list_status","Quantity.indexes.for.real.GDP.by.state","Real.GDP.by.state","month", "Taxes.on.production.and.imports")
 
@@ -152,25 +148,33 @@ auc
 
 ```{r}
 # Building model with No variables
-model_Null <- glm(default ~ 1,family=binomial(link='logit'),data=train_down)
+model_Null <- glm(default ~ 1,family=binomial(link='logit'),data=train)
 summary(model_Null)
-
+```
+```{r}
 Model_forward <- stepAIC(model_Null, direction = "forward", scope=list(upper=full_model,lower=model_Null))
+#summary(Model_forward)
 ```
 
 
 ```{r}
-model1 <- glm(default ~ Per.capita.real.GDP.by.state, family=binomial(link='logit'),data=train_down)
+model1 <- glm(default ~ loan_amnt+ Subsidies+Real.GDP.by.state+ Compensation.of.employees, family=binomial(link='logit'),data=train)
 summary(model1)
-x <- c("Per.capita.real.GDP.by.state")
+x <- c("loan_amnt", "Subsidies","Real.GDP.by.state", "Compensation.of.employees")
 
 model1_Pred <- 
   predict.glm(object = model1, newdata = test, type = "response")
 model_pred_t<- unname(ifelse(model1_Pred > .5, TRUE, FALSE))
 test[,'model_pred_t'] <- model_pred_t
+str(model_pred_t)
+str(test$default)
+str(test$model_pred_t)
 
-confusionMatrix(table(test$model_pred_t, test$default))
+with(test, table(test$model_pred_t, default))
+
+#confusionMatrix(test$model_pred_t, test$default)
 hist(model1_Pred)
+
 
 # Let's look at the ROC curve
 pr <- prediction(model1_Pred, test$default)
@@ -191,19 +195,25 @@ Model_backward <- stepAIC(full_model, direction = "backward")
 ```
 ```{r}
 
-model2 <- glm(default ~ term+Per.capita.real.GDP.by.state+Real.GDP.by.state, family=binomial(link='logit'),data=train_down)
+
+
+model2 <- glm(default ~ loan_amnt+Subsidies+Real.GDP.by.state+Compensation.of.employees,
+              family=binomial(link='logit'),data=train)
 summary(model2)
-x2 <- c( "term",
-           "Per.capita.real.GDP.by.state", 
-           "Real.GDP.by.state")
+x2 <- c( "loan_amnt",
+           "Compensation.of.employees", 
+           "Real.GDP.by.state", "Subsidies" 
+            )
 
 model2_Pred <- 
   predict.glm(object = model2, newdata = test, type = "response")
 model_pred_t<- unname(ifelse(model2_Pred > .5, TRUE, FALSE))
 test[,'model_pred_t'] <- model_pred_t
 
-confusionMatrix(table(test$model_pred_t, test$default))
+with(test, table(test$model_pred_t, default))
+#confusionMatrix(table(test$model_pred_t, test$default))
 hist(model2_Pred)
+
 
 # Let's look at the ROC curve
 pr <- prediction(model2_Pred, test$default)
@@ -357,7 +367,7 @@ hist(model5_Pred)
 #leaps (regression subset selection)
 require(leaps)
 require(MASS)
-regsubsets.out <- regsubsets(default ~ loan_amnt+ term+ int_rate+ installment+ grade+ home_ownership+ annual_inc+ verification_status+ pymnt_plan+ purpose+ dti+ open_acc+ pub_rec+ total_acc+ initial_list_status+ Compensation.of.employees+ Gross.operating.surplus+ Per.capita.real.GDP.by.state+ Quantity.indexes.for.real.GDP.by.state+ Real.GDP.by.state+ Subsidies+ Taxes.on.production.and.imports+ regions+ month, data=train_down, nbest= 1, method= "exhaustive")
+regsubsets.out <- regsubsets(default ~ loan_amnt+ term+ int_rate+ installment+ grade+ home_ownership+ annual_inc+ verification_status+ purpose+ dti+ open_acc+ pub_rec+ total_acc+ initial_list_status+ Compensation.of.employees+ Gross.operating.surplus+ Per.capita.real.GDP.by.state+ Quantity.indexes.for.real.GDP.by.state+ Real.GDP.by.state+ Subsidies+ Taxes.on.production.and.imports+ regions+ month, data=train, nbest= 1, method= "exhaustive")
 summary(regsubsets.out)
 
 #Best model at each variable number
@@ -394,8 +404,8 @@ summary.out$which[8,]
 ```
 ```{r}
 #building model with our best variables
-final_model <- glm(default ~ term+pub_rec+initial_list_status+Quantity.indexes.for.real.GDP.by.state+ int_rate+
-                     annual_inc+ Real.GDP.by.state+ month, family=binomial(link='logit'), data=train_down)
+final_model <- glm(default ~ term+home_ownership+purpose+total_acc+int_rate+annual_inc+ dti+regions
+                     , family=binomial(link='logit'), data=train)
 
 summary(final_model)
 
@@ -410,12 +420,13 @@ confusionMatrix(table(test$model_pred_t, test$default))
 hist(final_model_Pred)
 
 # Pseudo-R**2
-nullmod <- glm(default~1, family="binomial", data = train_down)
+nullmod <- glm(default~1, family="binomial", data = train)
 1-logLik(final_model)/logLik(nullmod)
 ```
 
-
-
+```{r}
+write.csv(test, file = "LogisticTest.csv" )
+```
 
 
 
