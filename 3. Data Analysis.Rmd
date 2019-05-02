@@ -13,11 +13,12 @@ library(tidyr)
 library(corrplot)
 library(ggcorrplot)
 library(corrgram)
+library(DescTools)
 ```
 
 ```{r}
 # Loading data
-df <- read.csv("FinalData.csv", header = TRUE)
+df <- read.csv("Data.csv", header = TRUE)
 
 ```
 
@@ -32,7 +33,7 @@ str(df)
 ```{r}
 #checking percentage of NA in data
 tmp = sort(sapply(df, function(x) sum(length(which(is.na(x)))))/nrow(df),decreasing = TRUE)
-            
+tmp           
 ```
 ```{r}
 # removing variables with more than 50% of NA's
@@ -86,7 +87,7 @@ corrgram(df2[,numVars2], order = TRUE, lower.panel = panel.shade, upper.panel = 
 
 ```
 ```{r}
-library(DescTools)
+
 Desc(df2$loan_amnt, main = "Loan amount distribution", plotit = TRUE)
 ```
 
@@ -181,6 +182,10 @@ Desc(df2$home_ownership, main = "Home Ownership", plotit = TRUE)
 # Removing unsed factors in home ownership
 df2$home_ownership <- factor(df2$home_ownership)
 table(df2$home_ownership)
+df2<- df2 %>% filter(home_ownership=="MORTGAGE"|home_ownership=="OWN"|home_ownership=="RENT")
+df2$home_ownership <- factor(df2$home_ownership)
+table(df2$home_ownership)
+
 ```
 ```{r}
 
@@ -210,26 +215,6 @@ tmp1
 
 ```
 
-```{r}
-
-gradeA <- (2665/144979)*100
-gradeB <- (9781/244048)*100
-gradeC <- (13131/232138)*100
-gradeD <- (10972/128231)*100
-gradeE <- (6602/63906)*100
-gradeF <- (3098/19887)*100
-gradeG <- (885/4593)*100
-
-cat("Default rate for grade type A : ", gradeA)
-cat("\nDefault rate for grade type B : ", gradeB)
-cat("\nDefault rate for grade type C : ", gradeC)
-cat("\nDefault rate for grade type D : ", gradeD)
-cat("\nDefault rate for grade type E : ", gradeE)
-cat("\nDefault rate for grade type F : ", gradeF)
-cat("\nDefault rate for grade type G : ", gradeG)
-
-
-```
 
 ```{r}
 funded_amnt <-
@@ -428,17 +413,17 @@ plot(df2$Taxes.on.production.and.imports, df2$Taxes.on.production.and.imports.le
 
 ```{r}
 # Variables to remove:
-
-vars_to_remove <- 
-  c("X", "id", "member_id", "funded_amnt", "funded_amnt_inv", "sub_grade", "emp_title", "url", "desc",
+str(df2)
+rm_col <- c("id", "member_id", "funded_amnt", "funded_amnt_inv", "sub_grade", "emp_title",
     "Taxes.on.production.and.imports.less.subsidies",
     "Gross.domestic.product..GDP..by.state")
-
-df3 <- df2 %>% select(-one_of(vars_to_remove))
+df3<- df2[, !(colnames(df2) %in% rm_col), drop = FALSE]
 str(df3)
 ```
 
 ```{r}
 write.csv(df3, file = "Data1.csv" )
 ```
+
+
 

@@ -30,6 +30,17 @@ str(df)
 ```
 
 ```{r}
+#Converting loan status to logical variable TRUE FALSE
+df <-
+  df %>%
+  mutate(default = ifelse(!(loan_status %in% "Defaulted"), FALSE, TRUE))
+table(df$default)
+df %>%
+  summarise(default_freq = sum(default / n()))
+table(df$default) / nrow(df)
+```
+
+```{r}
 df$earliest_cr_line <- as.Date(df$earliest_cr_line)
 df$issue_d <- as.Date(df$issue_d)
 ```
@@ -89,27 +100,35 @@ Desc(loan_status ~ month, df, digits = 1, main = "Loan status by month", plotit 
 Desc(int_rate ~ month, df, digits = 1, main = "Loan status by month", plotit = TRUE)
 ```
 
-
 ```{r}
-# Creating dummy variables for categorical variables
-library(mlr)
-library(dummies)
-df2 <- dummy.data.frame(df, names = c("regions","term", "grade","home_ownership","verification_status",
-                                      "purpose", "initial_list_status","application_type" ) , sep = "_")
+# Variables to remove:
 
+str(df)
+rm_col <- c("X.1","loan_status", "addr_state", "issue_d", "YearBefore","issue_d", "earliest_cr_line")
+df2<- df[, !(colnames(df) %in% rm_col), drop = FALSE]
+str(df2)
 ```
 
 ```{r}
-# hard encoding for categorical variables
-head(df2)
+str(df2)
 write.csv(df2, file = "TransfromedData.csv" )
 ```
 
 ```{r}
-head(df)
-write.csv(df, file = "TransfromedData1.csv" )
+set.seed(1)
+targetVar <- 'default'
+inTrain <- createDataPartition(y = df2[,targetVar], list = FALSE, p = .8)
+train <- df2[inTrain,]
+test <- df2[-inTrain,]
+stopifnot(nrow(train) + nrow(test) == nrow(df2))
+names(df2)
 ```
 
+```{r}
+write.csv(test, file = "TestData.csv" )
+write.csv(train, file = "TrainData.csv" )
+
+```
 
 
 
