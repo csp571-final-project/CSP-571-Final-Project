@@ -103,8 +103,7 @@ Desc(int_rate ~ month, df, digits = 1, main = "Loan status by month", plotit = T
 ```{r}
 # Variables to remove:
 
-str(df)
-rm_col <- c("X.1","loan_status", "addr_state", "issue_d", "YearBefore","issue_d", "earliest_cr_line")
+rm_col <- c("X","loan_status", "addr_state", "issue_d", "YearBefore","issue_d", "earliest_cr_line")
 df2<- df[, !(colnames(df) %in% rm_col), drop = FALSE]
 str(df2)
 ```
