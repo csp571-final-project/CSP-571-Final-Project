@@ -14,6 +14,9 @@ library(corrplot)
 library(ggcorrplot)
 library(corrgram)
 library(DescTools)
+require(grid)
+library(ggplot2)
+library(gridExtra)
 ```
 
 ```{r}
@@ -23,12 +26,16 @@ df <- read.csv("Data.csv", header = TRUE)
 ```
 
 ```{r}
-head(df)
-```
-
-```{r}
-ncol(df)
+# Removing Primary Keys:
+rm_col <- c("X", "id", "member_id", "profit")
+df<- df[, !(colnames(df) %in% rm_col), drop = FALSE]
 str(df)
+```
+```{r}
+#Converting date variables into date type
+
+df$earliest_cr_line <- as.Date(df$earliest_cr_line)
+df$issue_d <- as.Date(df$issue_d)
 ```
 ```{r}
 #checking percentage of NA in data
@@ -52,59 +59,130 @@ df2 <- na.omit(df1, cols = c("earliest_cr_line"))
 ```
 
 ```{r}
-# correlation plot of all Numeric variables
-
-numVars <- names(which(sapply(df2, is.numeric)))
+# Fetching numeric and categorical variables
+numVars<- names(which(sapply(df2, is.numeric)))
 catvars <- names(which(sapply(df2, is.factor)))
-corrplot(cor(df2[,numVars],use="na.or.complete"))
 ```
 
 
 ```{r}
-a <- cor(as.matrix(df2[,numVars]), use = "pairwise.complete.obs")
+# correlation plot of all Numeric variables
+
+
+Primary_numeric <- c("funded_amnt", "funded_amnt_inv","loan_amnt", "int_rate","installment", "open_acc", "dti" , "annual_inc", "pub_rec", "total_acc")
+
+# Correlation plot for Primary data source variables
+corrplot(cor(df2[,Primary_numeric],use="na.or.complete"), type = "lower", method = "circle")
+
+
+```
+```{r}
+
+a <- cor(as.matrix(df2[,Primary_numeric]), use = "pairwise.complete.obs")
 a[lower.tri(a,diag=TRUE)]=NA    #Prepare to drop duplicates and meaningless information
 a <- as.data.frame(as.table(a)) #Turn into a 3-column table
 a <- na.omit(a)                 #Get rid of the junk we flagged above
 a <- a[order(-abs(a$Freq)),]    #Sort by highest correlation (whether +ve or -ve)
 head(a, n = 20)
-```
-```{r}
-# ID , member_id have perfect correlation
 # loan_amount, funded amount and funded amount_inv have perfect correlation
+```
+
+```{r}
+# Correlation plot for Secondary data source variables
+
+Secondary_numeric <- c("Gross.domestic.product..GDP..by.state", "Compensation.of.employees", "Gross.operating.surplus", "Per.capita.real.GDP.by.state" , "Quantity.indexes.for.real.GDP.by.state",
+              "Real.GDP.by.state" ,  "Subsidies",  "Taxes.on.production.and.imports.less.subsidies", 
+              "Taxes.on.production.and.imports")
+
+corrplot(cor(df2[,Secondary_numeric],use="na.or.complete"), type = "lower", method = "circle")
 
 ```
 
 
 ```{r}
-#It's not good idead to consider all numeric
-
-numVars2 <- c("loan_amnt", "installment", "int_rate", "annual_inc", "dti", "open_acc",
-             "pub_rec", "total_acc", "Compensation.of.employees", "Gross.domestic.product..GDP..by.state",
-             "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", "Subsidies", 
-             "Taxes.on.production.and.imports", "Taxes.on.production.and.imports.less.subsidies")
-
-corrgram(df2[,numVars2], order = TRUE, lower.panel = panel.shade, upper.panel = panel.pie, text.panel = panel.txt)
-
+a <- cor(as.matrix(df2[,Secondary_numeric]), use = "pairwise.complete.obs")
+a[lower.tri(a,diag=TRUE)]=NA    #Prepare to drop duplicates and meaningless information
+a <- as.data.frame(as.table(a)) #Turn into a 3-column table
+a <- na.omit(a)                 #Get rid of the junk we flagged above
+a <- a[order(-abs(a$Freq)),]    #Sort by highest correlation (whether +ve or -ve)
+head(a, n = 20)
+# Real GDP and GDP by state has high correlaion
 ```
+
+
+
 ```{r}
+
+#Univariate Analysis
 
 Desc(df2$loan_amnt, main = "Loan amount distribution", plotit = TRUE)
 ```
+```{r}
+Desc(df2$purpose, main = "Loan purposes", plotit = TRUE)
+
+# most of the borrower took loan for debt consolidation
+```
+```{r}
+Desc(df2$term, main = "Term", plotit = TRUE)
+```
+
+
 
 ```{r}
-require(grid)
-library(ggplot2)
-library(gridExtra)
-# The number of open credit lines in the borrower's credit file - open_acc
-# The total number of credit lines currently in the borrower's credit file - total_acc
+Desc(df2$grade, main = "Loan grades", plotit = TRUE)
+Desc(df2$sub_grade, main= "Loan sub grades", plotit= TRUE)
+```
+```{r}
+# Removing unsed factors in home ownership
+df2$home_ownership <- factor(df2$home_ownership)
+table(df2$home_ownership)
+df2<- df2 %>% filter(home_ownership=="MORTGAGE"|home_ownership=="OWN"|home_ownership=="RENT")
+df2$home_ownership <- factor(df2$home_ownership)
+table(df2$home_ownership)
+Desc(df2$home_ownership, main = "Home Ownership", plotit = TRUE)
+```
+```{r}
+Desc(df2$emp_title, main = "Employee Title", plotit = TRUE)
 
-p1 <- ggplot(df2, aes(x = open_acc)) + geom_histogram(aes(fill = loan_status), position = "dodge", bins = 10)
-p2<- ggplot(df2, aes(x = total_acc)) + geom_histogram(aes(fill = loan_status), position = "dodge", bins = 10)
+# too many others values, should be removed
+```
+```{r}
+Desc(df2$application_type, main = "Application type", plotit = TRUE)
+
+
+```
+```{r}
+Desc(df2$initial_list_status, main= "Initial list status", plotit= TRUE)
+```
+```{r}
+Desc(df2$verification_status, main= "Verification status", plotit= TRUE)
+```
+
+
+```{r}
+# Multivariate analysis
+
+# Plotting total number of credit lines vs open credit lines
+
+p1 <- ggplot(df2, aes(x = open_acc)) + geom_histogram(aes(fill = loan_status), position = "dodge", bins = 10) + labs(x= "Open Credit Lines")
+p2<- ggplot(df2, aes(x = total_acc)) + geom_histogram(aes(fill = loan_status), position = "dodge", bins = 10) + labs(x= "Total Credit Lines")
+
+# Legend function: Fetching legend from ggplot
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+mylegend<-g_legend(p1) # use legend of plot 1
+
+# grid arrange : To plot multiple plots on same graph
 grid.arrange(
-  p1, p2,
-    
+  p1 +theme(legend.position="none"), # remoing individual plot legend
+  p2+theme(legend.position="none"),  # remoing individual plot legend
+  mylegend,
   nrow = 1,
-  top = "Credit Lines in Credit file of borrower",
+  top = "Credit line distribution",
   bottom = textGrob(
     " ",
     gp = gpar(fontface = 3, fontsize = 9),
@@ -121,11 +199,24 @@ grid.arrange(
 ggplot(df2, aes(x = pub_rec)) + geom_histogram(aes(fill = loan_status), position = "dodge", bins = 10)
 ```
 ```{r}
-p1 <- ggplot(df2, aes(x = loan_amnt)) + geom_histogram(aes(fill = loan_status), position = "dodge", bins = 10)
-p2<- ggplot(df2, aes(x = installment)) + geom_histogram(aes(fill = loan_status), position = "dodge", bins = 10)
+p1 <- ggplot(df2, aes(x = loan_amnt)) + geom_histogram(aes(fill = loan_status), position = "dodge", bins = 10)+
+  labs(x = "Loan amount")
+p2<- ggplot(df2, aes(x = installment)) + geom_histogram(aes(fill = loan_status), position = "dodge", bins = 10)+
+  labs(x = "Installments")
+# Legend function: Fetching legend from ggplot
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+mylegend<-g_legend(p1) # use legend of plot 1
+
+# grid arrange : To plot multiple plots on same graph
 grid.arrange(
-  p1, p2,
-    
+  p1 +theme(legend.position="none"), # remoing individual plot legend
+  p2+theme(legend.position="none"),  # remoing individual plot legend
+  mylegend,
   nrow = 1,
   top = "Loan amount vs Installments",
   bottom = textGrob(
@@ -139,61 +230,22 @@ grid.arrange(
 # however there is a 94% correlation between both Loan amount and installment, its plot does not look very similar
 # hence we will keep both for further analysis
 ```
-
 ```{r}
-# Analyzing categorical variables 
-catvars
+ggplot(df2, aes(x = grade)) + geom_bar(aes(fill = loan_status), position = "dodge")+
+  labs(x = "Grades")
+Desc(grade ~ loan_status, df2, digits = 1, main = "Grades by Loan Status", plotit = TRUE)
 ```
 ```{r}
-Desc(df2$term, main = "Term", plotit = TRUE)
-```
-
-
-```{r}
-Desc(df2$purpose, main = "Loan purposes", plotit = TRUE)
-
-# most of the borrower took loan fro debt consolidation
+ggplot(df2, aes(x = home_ownership)) + geom_bar(aes(fill = loan_status), position = "dodge")+
+  labs(x = "Home ownership")
 ```
 ```{r}
-Desc(df2$application_type, main = "Application type", plotit = TRUE)
-
-# only 1 % of the loan application type is Joint , It doesn't seem to be very good preictor 
-```
-
-```{r}
-Desc(df2$grade, main = "Loan grades", plotit = TRUE)
-```
-
-
-
-
-```{r}
-Desc(df2$emp_title, main = "Employee Title", plotit = TRUE)
-
-# too many others values, should be removed
-```
-
-
-```{r}
-Desc(df2$home_ownership, main = "Home Ownership", plotit = TRUE)
-```
-
-```{r}
-# Removing unsed factors in home ownership
-df2$home_ownership <- factor(df2$home_ownership)
-table(df2$home_ownership)
-df2<- df2 %>% filter(home_ownership=="MORTGAGE"|home_ownership=="OWN"|home_ownership=="RENT")
-df2$home_ownership <- factor(df2$home_ownership)
-table(df2$home_ownership)
-
+ggplot(df2, aes(x = term)) + geom_bar(aes(fill = loan_status), position = "dodge")+
+  labs(x = "Term")
 ```
 ```{r}
-
-Desc(df2$initial_list_status, main = "initial list status", plotit = TRUE)
-```
-```{r}
-
-Desc(df2$verification_status, main = "Verification status", plotit = TRUE)
+ggplot(df2, aes(x = purpose)) + geom_bar(aes(fill = loan_status), position = "dodge")+
+  labs(x = "Purpose")
 ```
 
 ```{r}
@@ -228,8 +280,6 @@ funded_amnt_inv <-
               variable = "funded_amnt_inv")
 
 plot_data <- rbind(funded_amnt, funded_amnt_inv)
-
-ls()
 ```
 ```{r}
 rm(list = ls()[grep("^funded", ls())])
@@ -244,37 +294,10 @@ plot_data %>%
 # We can derive a few points from the plot:
 
 # 1. there are instances when funded amount is smaller loan amount
-# 2. there seems to be a number of loans where investment is smaller funded amount i.e. not the full loan is invested in
+# 2. there seems to be a number of loans where investment is smaller than funded amount i.e. not the full loan is invested in
 ```
 
 
-```{r}
-df2 %>%
-  select(int_rate, grade, issue_d) %>%
-  group_by(grade, issue_d) %>%
-  summarise(int_rate_mean = mean(int_rate, na.rm = TRUE)) %>%
-  ggplot(aes(issue_d, int_rate_mean)) +
-  geom_line(color= "dark green", size = 1) +
-  facet_wrap(~ grade) +  xlab("Date issued")
-
-#the mean interest rate is falling or relatively constant for high-rated clients
-#the mean interest rate is increasing significantly for low-rated clients
-```
-
-```{r}
-
-df2 %>%
-  select(loan_amnt, grade, issue_d) %>%
-  group_by(grade, issue_d) %>%
-  summarise(loan_amnt_mean = mean(loan_amnt, na.rm = TRUE)) %>%
-  ggplot(aes(issue_d, loan_amnt_mean)) +
-  geom_line(color= "dark green", size = 1) +
-  facet_wrap(~ grade) +  xlab("Date issued")
-
-#the mean loan amount is increasing for all grades
-#while high-rated clients have some mean loan amount volatility, it is much higher for low-rated clients
-
-```
 ```{r}
 # check if interest rates are dependent on grades
 Desc(int_rate ~ grade, df2, digits = 1, main = "Interest rate by grade", plotit = TRUE)
@@ -307,13 +330,13 @@ df2 %>%
 #a few loans seem to have an equally low interest rate independent of grade
 #the spread of rates seems to increase with grade increase
 #there tend to be more outliers on the lower end of the rate
-#The 3-year term has a much higher number of high-rated borrowers while the 5-year term has a larger number in the low-rating grades
+#The 3-year term has a much higher number of high-rated borrowers while the 5-year term has a larger number in the low-rating grades borrowers
 ```
 ```{r}
 # Let's look into it by subgrades
 
 plot3 <- ggplot(df2, aes(x=int_rate, y=sub_grade)) + geom_point(aes(color=loan_status, alpha=0.4))
-plot3 <- plot3 + theme_bw() + scale_fill_manual("Loan Status", values = c("red", "green")) +
+plot3 <- plot3 + theme_bw() + scale_fill_manual("Loan Status", values = c("red", "blue")) +
   labs(y="Sub Grades", x="Interest Rates")
 plot3
 
@@ -396,25 +419,18 @@ df2 <- subset(df2, arg==FALSE)
 
 ```{r}
 plot3 <- ggplot(df2, aes(x=int_rate, y=sub_grade)) + geom_point(aes(color=loan_status, alpha=0.4))
-plot3 <- plot3 + theme_bw() + scale_fill_manual("Loan Status", values = c("red", "green")) +
+plot3 <- plot3 + theme_bw() + scale_fill_manual("Loan Status", values = c("red", "blue")) +
   labs(y="Sub Grades", x="Interest Rates")
 plot3
 
 # this graph looks fine now
-```
-```{r}
-plot(df2$Taxes.on.production.and.imports, df2$Taxes.on.production.and.imports.less.subsidies )
-
-# highly correlated other than few outlying values 
-# corr = 0.8264
-# we can remove one of them for further processing
 ```
 
 
 ```{r}
 # Variables to remove:
 str(df2)
-rm_col <- c("id", "member_id", "funded_amnt", "funded_amnt_inv", "sub_grade", "emp_title",
+rm_col <- c("funded_amnt", "funded_amnt_inv", "sub_grade", "emp_title",
     "Taxes.on.production.and.imports.less.subsidies",
     "Gross.domestic.product..GDP..by.state")
 df3<- df2[, !(colnames(df2) %in% rm_col), drop = FALSE]
