@@ -114,6 +114,7 @@ write.csv(df2, file = "TransfromedData.csv" )
 ```
 
 ```{r}
+# We'll do stratified sampling to split our data into training and test sets
 set.seed(1)
 targetVar <- 'default'
 inTrain <- createDataPartition(y = df2[,targetVar], list = FALSE, p = .8)

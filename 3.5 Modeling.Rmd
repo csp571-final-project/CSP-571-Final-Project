@@ -18,6 +18,7 @@ library(ggplot2)
 library(standardize)
 library(Amelia)
 library(ROCR)
+library(glmnet)
 ```
 
 ```{r}
@@ -151,13 +152,11 @@ auc
 model_Null <- glm(default ~ 1,family=binomial(link='logit'),data=train)
 summary(model_Null)
 ```
+
 ```{r}
+# Forward model
+
 Model_forward <- stepAIC(model_Null, direction = "forward", scope=list(upper=full_model,lower=model_Null))
-#summary(Model_forward)
-```
-
-
-```{r}
 model1 <- glm(default ~ loan_amnt+ Subsidies+Real.GDP.by.state+ Compensation.of.employees, family=binomial(link='logit'),data=train)
 summary(model1)
 x <- c("loan_amnt", "Subsidies","Real.GDP.by.state", "Compensation.of.employees")
@@ -192,11 +191,6 @@ auc
 ```{r}
 Model_backward <- stepAIC(full_model, direction = "backward")
 
-```
-```{r}
-
-
-
 model2 <- glm(default ~ loan_amnt+Subsidies+Real.GDP.by.state+Compensation.of.employees,
               family=binomial(link='logit'),data=train)
 summary(model2)
@@ -225,14 +219,10 @@ auc <- auc@y.values[[1]]
 auc
 
 
-
 ```
 
 ```{r}
 Model_Step <- stepAIC(full_model, direction = "both" )
-```
-
-```{r}
 model3 <- glm(default ~ term+Per.capita.real.GDP.by.state, family=binomial(link='logit'),data=train_down)
 summary(model3)
 x3 <- c( "term",
@@ -255,8 +245,8 @@ plot(prf)
 auc <- performance(pr, measure = "auc")
 auc <- auc@y.values[[1]]
 auc
-
 ```
+
 
 ```{r}
 library(earth)
@@ -265,11 +255,11 @@ ev <- evimp (marsModel)
 ev
 ```
 ```{r}
-model4 <- glm(default ~ int_rate+Quantity.indexes.for.real.GDP.by.state+month+annual_inc+initial_list_status+Real.GDP.by.state+Per.capita.real.GDP.by.state+Compensation.of.employees+Gross.operating.surplus+regions+Subsidies+Taxes.on.production.and.imports+dti, family=binomial(link='logit'), data=train_down)
+model4 <- glm(default ~ int_rate+annual_inc+term+dti+purpose+loan_amnt+home_ownership, family=binomial(link='logit'), data=train)
 
 summary(model4)
 
-x3 <- c("int_rate","Quantity.indexes.for.real.GDP.by.state","month","annual_inc","initial_list_status","Real.GDP.by.state","Per.capita.real.GDP.by.state","Compensation.of.employees","Gross.operating.surplus","regions","Subsidies","Taxes.on.production.and.imports","dti")
+x3 <- c("int_rate","annual_inc","term", "dti","purpose","loan_amnt","home_ownership")
 
 model4_Pred <- 
   predict.glm(object = model4, newdata = test, type = "response")
@@ -293,36 +283,15 @@ auc
 ```
 
 ```{r}
-# Let's look at the precision recall curves
-# install.packages('DMwR')
-library('DMwR')
-PRcurve(preds = model4_Pred, trues = test$default)
-
-# Let's take a look at the deviance
-llcomponents <- function(y, predicted.y){
-  return(y*log(predicted.y) + (1-y)*log(1-predicted.y))
-}
-y <- train_down[,targetVar]
-predicted.y <- predict(model4
-                       ,newdata = train_down[,x3]
-                       # Specifying response means we want the probabilities
-                       ,type='response')
-
-deviance <- sign(as.numeric(y) - predicted.y)*sqrt(-2*llcomponents(as.numeric(y), predicted.y))
-
-summary(deviance)
-```
-
-```{r}
 # Primary data model 
 xPrimary <- c("loan_amnt", "term", "int_rate", "installment", "grade",
-           "home_ownership", "annual_inc", "verification_status","pymnt_plan", "purpose",
+           "home_ownership", "annual_inc", "verification_status", "purpose",
            "dti", "open_acc", "pub_rec", "total_acc", "initial_list_status", 
            "regions", "month" )
 
 modelForm <- createModelFormula(targetVar, xPrimary, includeIntercept = T)
 
-Primary_model <- glm(modelForm,family=binomial(link='logit'),data=train_down)
+Primary_model <- glm(modelForm,family=binomial(link='logit'),data=train)
 
 summary(Primary_model)
 
@@ -351,7 +320,7 @@ cf1 <- cforest(default ~ . , data= train_down, control=cforest_unbiased(mtry=2,n
 cf1
 ```
 ```{r}
-model5 <- glm(default ~ loan_amnt+ term+ int_rate+ installment+ grade+ home_ownership+ annual_inc+ verification_status+ pymnt_plan+ purpose+ dti+ open_acc+ pub_rec+ total_acc+ initial_list_status+ Compensation.of.employees+ Gross.operating.surplus+ Per.capita.real.GDP.by.state+ Quantity.indexes.for.real.GDP.by.state+ Real.GDP.by.state+ Subsidies+ Taxes.on.production.and.imports+ regions+ month , family=binomial(link='logit'), data=train_down)
+model5 <- glm(default ~ loan_amnt+ term+ int_rate+ installment+ grade+ home_ownership+ annual_inc+ verification_status+ pymnt_plan+ purpose+ dti+ open_acc+ pub_rec+ total_acc+ initial_list_status+ Compensation.of.employees+ Gross.operating.surplus+ Per.capita.real.GDP.by.state+ Quantity.indexes.for.real.GDP.by.state+ Real.GDP.by.state+ Subsidies+ Taxes.on.production.and.imports+ regions+ month , family=binomial(link='logit'), data=train)
 
 summary(model5)
 
@@ -422,6 +391,14 @@ hist(final_model_Pred)
 # Pseudo-R**2
 nullmod <- glm(default~1, family="binomial", data = train)
 1-logLik(final_model)/logLik(nullmod)
+
+pr <- prediction(final_model_Pred, test$default)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
 ```
 
 ```{r}

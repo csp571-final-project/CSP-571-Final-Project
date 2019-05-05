@@ -43,19 +43,6 @@ test <- test[, ! names(test) %in% vars_to_remove, drop = F]
 str(test)
 ```
 
-
-```{r}
-# We'll do stratified sampling to split our data into training and test sets
-set.seed(1)
-
-targetVar <- 'default'
-inTrain <- createDataPartition(y = df1[,targetVar], list = FALSE, p = .8)
-train <- df1[inTrain,]
-test <- df1[-inTrain,]
-stopifnot(nrow(train) + nrow(test) == nrow(df1))
-str(df1)
-```
-
 ```{r}
 targetVar <- 'default'
 xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
@@ -108,7 +95,7 @@ text(tree.default, pretty = 0)
 
 
 ```{r}
-#Base model fro decision tree 
+#Base model for decision tree 
 
 targetVar<- train$default
 fit <- rpart(modelForm,
@@ -129,24 +116,9 @@ with(test, table(fit.pred, default))
 ## Confusion matrix 
 test[,'fit.pred'] <- fit.pred
 confusionMatrix(table(test$fit.pred, test$default))
-```
-```{r}
-varImp(fit)
-
-#   Problem : Plotting VarImp in barplot
-#   varImp(fit)$importance %>%
-#   as.data.frame() %>%
-#   rownames_to_column() %>%
-#   arrange(Overall) %>%
-#   mutate(rowname = forcats::fct_inorder(rowname )) %>%
-#   ggplot()+
-#     geom_col(aes(x = rowname, y = Overall))+
-#     coord_flip()+
-#     theme_bw()
-
-# most important variables are interest rate, Initial list status, Quantity.indexes.for.real.GDP.by.state
 
 ```
+
 
 ```{r}
 #cross validation to optimizes Hyperparameter tuning on decision tree
@@ -161,8 +133,8 @@ train_ctrl <- trainControl(method = "repeatedcv"
                        )
 x = train[,xVars]
 
-
-y = as.factor(train[, targetVar])
+y = train$default
+#y = as.factor(train[, targetVar])
 cleanNames <- function(x){
 feature.names=names(x)
   for (f in feature.names) {
@@ -181,11 +153,6 @@ y = make.names(y)
 Cross_fit<- train(x = x
                , y = y
                , method = "rpart",
-               # This is telling caret to test 20 options of the
-               # hyperparameters (tuning variables) for this
-               # model. Supposedly caret should know for rpart
-               # what variables to tune. In practice, bugs are
-               # aplenty!
                tuneLength=20,
                metric = "ROC",
                trControl = train_ctrl)
@@ -197,7 +164,7 @@ Cross_fit
 ```
 
 ```{r}
-# Let's extract the model that caret developed at plot it
+# extract the model that caret developed
 
 ggplot(Cross_fit)
 fit2 <- Cross_fit$finalModel
@@ -211,11 +178,11 @@ str(test)
 str(fit2.pred)
 
 levels(test$default) <- c("FALSE.","TRUE.")
-#test$default <- as.factor(test$default)
+test$default <- as.factor(test$default)
 str(test$default)
 ActualNew <-test$default
 
-confusionMatrix(reference = ActualNew, data = fit2.pred)
+confusionMatrix(reference = test$default, data = fit2.pred)
 varImp(Cross_fit)
 ```
 
@@ -226,10 +193,17 @@ test1$fit.pred <- as.factor(test1$fit.pred)
 levels(test1$fit.pred) <- c(FALSE, TRUE)
 
 test1$fit.pred
-write.csv(test, file = "DecisionTreeTest.csv" )
+
 ```
 
 
+
+
+```{r}
+# saving test results in csv file
+
+write.csv(test, file = "DecisionTreeTest.csv" )
+```
 
 
 
