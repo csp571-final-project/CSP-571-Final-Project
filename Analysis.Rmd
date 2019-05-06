@@ -10,18 +10,29 @@ library(Amelia)
 #2.2.1		Access and combine data tables
 rm(list = ls())
 data <- read.csv("C:/Users/young/Desktop/Spring 2019/Data Preparation and Analysis/lending-club-loan-data/loan.csv", stringsAsFactors = F)
+
+dim(data)
+head(data)
+levels(as.factor(data$loan_status))
+sum(data$loan_status =="Fully Paid")
+sum(data$loan_status == "Does not meet the credit policy. Status:Fully Paid")
+sum(data$loan_status == "Charged Off")
+sum(data$loan_status == "Does not meet the credit policy. Status:Charged Off")
+sum(data$loan_status == "Default")
+
+data <- data %>%
+  filter(loan_status == "Fully Paid" | loan_status == "Does not meet the credit policy. Status:Fully Paid" | loan_status == "Charged Off" | loan_status == "Does not meet the credit policy. Status:Charged Off" | loan_status == "Default")
+
 secondary <- read.csv("C:/Users/young/Downloads/gsp_naics_all/gsp_naics_all.csv", stringsAsFactors = F)
 asd <- secondary %>% 
-  filter(IndustryId == 1 & !GeoName %in% c("United States", "Far West", "Great Lakes", "Mideast", "New England", "Plains", "Rocky Mountain", "Southeast", "Southwest")) %>%
-  select(GeoName, ComponentName, X2006, X2007, X2008, X2009, X2010, X2011, X2012, X2013, X2014)
-
-asd
+  filter(IndustryId == 1 & !GeoName %in% c("United States", "Far West", "Great Lakes", "Mideast", "New England", "Plains", "Rocky Mountain",
+                                           "Southeast", "Southwest")) %>%
+  dplyr::select(GeoName, ComponentName, X2006, X2007, X2008, X2009, X2010, X2011, X2012, X2013, X2014)
 
 asd <- melt(asd, measure.vars = c("X2006", "X2007", "X2008", "X2009", "X2010", "X2011", "X2012", "X2013", "X2014"))
 levels(as.factor(asd$ComponentName))
 asd$variable <- format(as.Date(paste("1/01/",substring(asd$variable,first = 2), sep = ""), format = "%m/%d/%Y"), "%Y")
 levels(as.factor(asd$variable))
-asd
 
 asd <- cast(asd, GeoName + variable  ~ ComponentName) 
 
@@ -30,7 +41,12 @@ stateDictionary
 
 finalSecondary <- merge(x = asd, y = stateDictionary, by.x = "GeoName", by.y = "US.State")
 
+names(finalSecondary)
+
 missmap(finalSecondary)
+
+head(data)
+
 ```
 
 ```{r}
@@ -47,13 +63,14 @@ TurnIntoDate <- function(date) {
 }
 
 
+#"last_pymnt_d"
+
 futureData <- c("collection_recovery_fee",
                 "collections_12_mths_ex_med",
                 "delinq_2yrs",
                 "inq_last_6mths",
                 "last_credit_pull_d",
                 "last_pymnt_amnt",
-                "last_pymnt_d",
                 "mths_since_last_delinq",
                 "mths_since_last_major_derog",
                 "mths_since_last_record",
@@ -63,7 +80,6 @@ futureData <- c("collection_recovery_fee",
                 "recoveries",
                 "revol_bal",
                 "revol_util",
-                "total_pymnt",
                 "total_pymnt_inv",
                 "total_rec_int",
                 "total_rec_late_fee",
@@ -127,7 +143,7 @@ characterData <- c("desc", "url")
 dateData <- c("earliest_cr_line", "issue_d")
 
 
-filteredData <- data %>% select(-one_of(c(futureData))) # Remove future data
+filteredData <- data %>% dplyr::select(-one_of(c(futureData))) # Remove future data
                                                         # last_fico_range_high and last_fico_range_low do not exist in csv file
                                                         # Removed
 
@@ -237,26 +253,26 @@ filteredData[duplicated(filteredData[,idData]),]  # There are no duplicates
 ```
 
 ```{r}
-# Barplots of Categorical Variables  
-# Boxplots and Density Curves of Continuous Variables
-library(ggplot2)
-
-categoricalData2 <- categoricalData[!categoricalData %in% c("emp_title", "title", "zip_code")]
-# emp_title, title, zip_code have too many levels to graph
-
-for(variable in categoricalData2) {
-  barPlot <- ggplot(filteredData, aes_string(x = variable)) + geom_bar(aes_string(fill = variable), position = "dodge")
-  print(barPlot)
-}
-
-# boxplots
-for(variable in numericalData) {
-  boxplot(filteredData[variable], main = variable)
-}
-
-# transform annual_inc to log10
-filteredData$annual_inc <- ifelse(filteredData$annual_inc >= 1, log10(filteredData$annual_inc), 0)
-filteredData$annual_inc_joint <- ifelse(filteredData$annual_inc_joint >= 1, log10(filteredData$annual_inc_joint), 0)
+# # Barplots of Categorical Variables  
+# # Boxplots and Density Curves of Continuous Variables
+# library(ggplot2)
+# 
+# categoricalData2 <- categoricalData[!categoricalData %in% c("emp_title", "title", "zip_code")]
+# # emp_title, title, zip_code have too many levels to graph
+# 
+# for(variable in categoricalData2) {
+#   barPlot <- ggplot(filteredData, aes_string(x = variable)) + geom_bar(aes_string(fill = variable), position = "dodge")
+#   print(barPlot)
+# }
+# 
+# # boxplots
+# for(variable in numericalData) {
+#   boxplot(filteredData[variable], main = variable)
+# }
+# 
+# # transform annual_inc to log10
+# filteredData$annual_inc <- ifelse(filteredData$annual_inc >= 1, log10(filteredData$annual_inc), 0)
+# filteredData$annual_inc_joint <- ifelse(filteredData$annual_inc_joint >= 1, log10(filteredData$annual_inc_joint), 0)
 ```
 
 ```{r}
@@ -293,7 +309,7 @@ filteredData[which.max(filteredData$dti),]  # application_type is JOINT; maybe 9
 # Check the dti and dti joint for joint applications
 filteredData %>%
   filter(!is.na(dti_joint)) %>%
-  select(dti, dti_joint)
+  dplyr::select(dti, dti_joint)
 
 # Everything seems normal except the 9999. Remove the observation with it.
 filteredData <- filteredData[filteredData$dti < 2000, ]
@@ -332,6 +348,73 @@ head(a, n = 10)  #top 10 variables that are collinear
 ```
 
 ```{r}
+
+finalData$profit <- finalData$total_pymnt - finalData$loan_amnt
+
+# Drop these joint variables
+finalData$dti_joint <- NULL
+finalData$annual_inc_joint <- NULL
+finalData$verification_status_joint <- NULL
+finalData$last_pymnt_d <- NULL
+finalData$total_pymnt <- NULL
+finalData$url <- NULL
+finalData$desc <- NULL
 write.csv(finalData, file = "FinalData.csv" )
+
+head(finalData)
+
+nrow(finalData)
+sum(finalData$profit)
+
+# qwe <- read.csv("C:/Users/young/Downloads/Project-Files-master/Project-Files-master/data/test.1hot.df.csv")
+# ewq <- read.csv("C:/Users/young/Downloads/Project-Files-master/Project-Files-master/data/test.df.csv")
+# 
+# head(filteredData)
+# 
+# filteredData$X <- 1:nrow(filteredData)
+# 
+# pymnt <- merge(filteredData, qwe, by = "X")$total_pymnt
+# qwe$total_pymnt <- pymnt
+# ewq$total_pymnt <- pymnt
+# 
+# head(ewq)
+# head(qwe)
+# 
+# qwe <- qwe %>% mutate(profit = total_pymnt - loan_amnt)
+# ewq <- ewq %>% mutate(profit = total_pymnt - loan_amnt)
+# 
+# write.csv(qwe, file = "test_encoded.csv")
+# write.csv(ewq, file = "test_notcoded.csv")
+
+# # Get median and mean profit of not defaulters
+# finalData$profit_non_defaulters <- ifelse(finalData$term == "36 months", 36,60) * finalData$installment - finalData$loan_amnt 
+# not_defaulters <- finalData[finalData$loan_status == "Not Defaulted",]
+# median(not_defaulters$profit_non_defaulters)
+# mean(not_defaulters$profit_non_defaulters)
+# 
+# elapsed_months <- function(end_date, start_date) {
+#     12 * (year(end_date) - year(start_date)) + (month(end_date) - month(start_date))
+# }
+# # Get median and mean profit of defaulters
+# head(finalData)
+# 
+# finalData$last_pymnt_d <- sapply(finalData$last_pymnt_d, TurnIntoDate)
+# finalData$last_pymnt_d <- as.Date(finalData$last_pymnt_d)
+# 
+# finalData$months_paid <- mapply(elapsed_months, finalData$last_pymnt_d, finalData$issue_d)
+# head(finalData$months_paid)
+# 
+# # Get the number of months
+# defaulters <- finalData[finalData$loan_status == "Defaulted",]
+# defaulters$profit_defaulters <- defaulters$months_paid * defaulters$installment - defaulters$loan_amnt
+# median(defaulters$profit_defaulters, na.rm = T)
+# mean(defaulters$profit_defaulters, na.rm = T)
+# # defaulters <- finalData[finalData$loan_status == "Defaulted",]
+# # median(defaulters$profit)
 ```
+
+```{r}
+
+```
+
 
