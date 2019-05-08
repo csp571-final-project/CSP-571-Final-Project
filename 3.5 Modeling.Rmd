@@ -40,17 +40,6 @@ str(test)
 ```
 
 ```{r}
-# We'll do stratified sampling to split our data into training and test sets
-
-targetVar <- 'default'
-inTrain <- createDataPartition(y = df1[,targetVar], list = FALSE, p = .8)
-train <- df1[inTrain,]
-test <- df1[-inTrain,]
-stopifnot(nrow(train) + nrow(test) == nrow(df1))
-names(df1)
-```
-
-```{r}
 xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
            "home_ownership", "annual_inc", "verification_status","purpose",
            "dti", "open_acc", "pub_rec", "total_acc", "initial_list_status", 
