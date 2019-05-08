@@ -299,12 +299,6 @@ plot_data %>%
 
 
 ```{r}
-# check if interest rates are dependent on grades
-Desc(int_rate ~ grade, df2, digits = 1, main = "Interest rate by grade", plotit = TRUE)
-
-# This is not a surprise higher the grade of loan higher the risk associated with it so high interest rate
-```
-```{r}
 # Let's use term in analysisng interest rate by grade
 library(scales)
 give_count <- 
@@ -342,94 +336,10 @@ plot3
 
 ```
 
-```{r}
-
-# Ohh , Each subgrade has one interest rate with similar variables, this is due to human entry error
-# let's delete these detected outliers
-
-arg <- df2$int_rate==6 & df2$sub_grade=="F4"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="G1"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="F5"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="E5"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="E4"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="E3"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="E2"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="E1"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="D5"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="D4"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="D3"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="D2"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="D1"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="C5"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="C4"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="C3"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="C2"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="C1"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="B5"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="B4"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="B3"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="B2"
-df2 <- subset(df2, arg==FALSE)
-
-arg <- df2$int_rate==6 & df2$sub_grade=="B1"
-df2 <- subset(df2, arg==FALSE)
-```
-
-```{r}
-plot3 <- ggplot(df2, aes(x=int_rate, y=sub_grade)) + geom_point(aes(color=loan_status, alpha=0.4))
-plot3 <- plot3 + theme_bw() + scale_fill_manual("Loan Status", values = c("red", "blue")) +
-  labs(y="Sub Grades", x="Interest Rates")
-plot3
-
-# this graph looks fine now
-```
 
 
 ```{r}
 # Variables to remove:
-str(df2)
 rm_col <- c("funded_amnt", "funded_amnt_inv", "sub_grade", "emp_title",
     "Taxes.on.production.and.imports.less.subsidies",
     "Gross.domestic.product..GDP..by.state")
