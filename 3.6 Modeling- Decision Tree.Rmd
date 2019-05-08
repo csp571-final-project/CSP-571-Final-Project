@@ -55,34 +55,6 @@ xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
 
 
 ```{r}
-# Imbalanced data - under-sampling
-# Under-sampling balances the dataset by reducing the size of the abundant class. This method is used when quantity of # data is sufficient. By keeping all samples in the rare class and randomly selecting an equal number of samples in   # the abundant class, a balanced new dataset can be retrieved for further modelling.
-
-# train_down <- 
-#   caret::downSample(x = train[, xVars], 
-#                     y = as.factor(train$default), yname = "default")
-# 
-# base::prop.table(table(train_down$default))
-# base::table(train_down$default)
-```
-
-```{r}
-# Model Formula
-
-createModelFormula <- function(targetVar, xVars, includeIntercept = TRUE){
-  if(includeIntercept){
-    modelForm <- as.formula(paste(targetVar, "~", paste(xVars, collapse = '+ ')))
-  } else {
-    modelForm <- as.formula(paste(targetVar, "~", paste(xVars, collapse = '+ '), -1))
-  }
-  return(modelForm)
-}
-
-modelForm <- createModelFormula(targetVar, xVars)
-
-```
-
-```{r}
 require(tree)
 tree.default = tree(default~loan_amnt+term+int_rate+installment+grade+home_ownership+annual_inc+verification_status+purpose+dti+open_acc+pub_rec+total_acc+initial_list_status+Compensation.of.employees+Gross.operating.surplus+Per.capita.real.GDP.by.state+ Quantity.indexes.for.real.GDP.by.state+Real.GDP.by.state+Subsidies+Taxes.on.production.and.imports+regions, data=train)
 summary(tree.default)
