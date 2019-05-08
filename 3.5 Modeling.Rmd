@@ -39,6 +39,8 @@ test <- test[, ! names(test) %in% vars_to_remove, drop = F]
 str(test)
 ```
 
+
+
 ```{r}
 xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
            "home_ownership", "annual_inc", "verification_status","purpose",
@@ -47,17 +49,6 @@ xVars <- c("loan_amnt", "term", "int_rate", "installment", "grade",
            "Quantity.indexes.for.real.GDP.by.state", "Real.GDP.by.state", "Subsidies", 
            "Taxes.on.production.and.imports", "regions", "month" )
 ```
-
-```{r}
-# Imbalanced data - under-sampling
-train_down <- 
-  caret::downSample(x = train[, xVars], 
-                    y = as.factor(train$default), yname = "default")
-
-base::prop.table(table(train_down$default))
-base::table(train_down$default)
-```
-
 
 
 
@@ -342,7 +333,7 @@ plot(regsubsets.out, scale = "adjr2", main = "Adjusted R^2")
 library(car)
 layout(matrix(1:1, ncol = 1))
 ## Adjusted R2
-## This is just another way of presenting the same information for adjusted \( R^2 \)
+
 res.legend <-
     subsets(regsubsets.out, statistic="adjr2", legend = FALSE, min.size = 5, main = "Adjusted R^2")
 ## Mallow Cp
@@ -366,8 +357,6 @@ final_model <- glm(default ~ term+home_ownership+purpose+total_acc+int_rate+annu
                      , family=binomial(link='logit'), data=train)
 
 summary(final_model)
-
-#x3 <- c("int_rate","Quantity.indexes.for.real.GDP.by.state","month","annual_inc","initial_list_status","Real.GDP.by.state","Per.capita.real.GDP.by.state","Compensation.of.employees","Gross.operating.surplus","regions","Subsidies","Taxes.on.production.and.imports","dti")
 
 final_model_Pred <- 
   predict.glm(object = final_model, newdata = test, type = "response")
