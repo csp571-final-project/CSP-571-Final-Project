@@ -42,20 +42,12 @@ df$issue_d <- as.Date(df$issue_d)
 tmp = sort(sapply(df, function(x) sum(length(which(is.na(x)))))/nrow(df),decreasing = TRUE)
 tmp           
 ```
-```{r}
-# removing variables with more than 50% of NA's
 
-discard_column = names(tmp[tmp>0.5])
-df1 = (df[,!(names(df) %in% discard_column)])
-
-tmp = sort(sapply(df1, function(x) sum(length(which(is.na(x)))))/nrow(df1),decreasing = TRUE)
-tmp[tmp>0]
-```
 ```{r}
-#earliest_cr_line still has some NA's, removing NA's containing records
+#earliest_cr_line has some NA's, removing NA's containing records
 
 df2 <- na.omit(df1, cols = c("earliest_cr_line"))
-#sort(sapply(df2, function(x) sum(length(which(is.na(x)))))/nrow(df2),decreasing = TRUE)
+
 ```
 
 ```{r}
@@ -299,7 +291,7 @@ plot_data %>%
 
 
 ```{r}
-# Let's use term in analysisng interest rate by grade
+# Let's use term in analyzing interest rate by grade
 library(scales)
 give_count <- 
   stat_summary(fun.data = function(x) return(c(y = median(x)*1.06,
@@ -326,6 +318,7 @@ df2 %>%
 #there tend to be more outliers on the lower end of the rate
 #The 3-year term has a much higher number of high-rated borrowers while the 5-year term has a larger number in the low-rating grades borrowers
 ```
+
 ```{r}
 # Let's look into it by subgrades
 
